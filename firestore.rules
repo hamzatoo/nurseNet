@@ -1,0 +1,117 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // دالة مساعدة للتحقق من أن المستخدم مسؤول، موضوعة داخل نطاق database لاستخدامه في المسار.
+    function isAdmin() {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return userDoc.data != null && userDoc.data.role == 'admin';
+    }
+
+    // قواعد جمع المستخدمين (users)
+    match /users/{userId} {
+      // السماح بالقراءة للمستخدمين المصادقين
+      allow read: if request.auth != null;
+      
+      // السماح بالكتابة:
+      // 1. إنشاء مستخدم جديد: السماح لأي مستخدم مصادق بإنشاء حساب
+      // 2. تحديث: السماح لأي مستخدم مصادق
+      // 3. حذف: المالك أو المسؤول فقط
+      allow create: if request.auth != null && 
+                    request.resource.data.role != null &&
+                    request.resource.data.email != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null && (
+        isAdmin() ||
+        request.auth.uid == userId
+      );
+    }
+    
+    // قواعد جمع الممرضين (nurses)
+    match /nurses/{nurseId} {
+      // السماح بالقراءة للجميع
+      allow read: if true;
+      
+      // السماح بالكتابة:
+      // 1. إنشاء: المسؤولون فقط
+      // 2. تحديث: السماح لأي مستخدم مصادق
+      // 3. حذف: المسؤولون فقط
+      allow create: if request.auth != null && isAdmin();
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null && isAdmin();
+    }
+    
+    // قواعد جمع المرضى (patients)
+    match /patients/{patientId} {
+      // السماح بالقراءة للمستخدمين المصادقين
+      allow read: if request.auth != null;
+      
+      // السماح بالكتابة:
+      // 1. إنشاء مستخدم جديد: السماح لأي مستخدم مصادق بإنشاء حساب مريض
+      // 2. تحديث: المالك أو المسؤول فقط
+      // 3. حذف: المالك أو المسؤول فقط
+      allow create: if request.auth != null && 
+                    request.resource.data.role == 'patient' &&
+                    request.resource.data.email != null;
+      allow update: if request.auth != null && (
+        request.auth.uid == patientId ||
+        isAdmin()
+      );
+      allow delete: if request.auth != null && (
+        request.auth.uid == patientId ||
+        isAdmin()
+      );
+    }
+    
+    // الأدوية محفوظة تحت users/{auth.uid}/medications/{medicationId}.
+    // معرّف المالك في مسار المستند هو مصدر الصلاحية؛ لا حاجة إلى where إضافي.
+    match /users/{userId}/medications/{medicationId} {
+      // يسمح فقط للمستخدم المصادق الذي يطابق UID في المسار بقراءة أو تعديل أدوائه.
+      allow read, create, update, delete: if request.auth != null
+                                           && request.auth.uid == userId;
+    }
+    
+    // قراءات النبض المحفوظة من ميزة القياس بدون تلامس، تحت users/{auth.uid}/vitals.
+    // المستخدم يقرأ ويضيف قراءاته فقط؛ لا يمكن تعديل قياس سابق أو حذف قياس غيره.
+    match /users/{userId}/vitals/{readingId} {
+      allow read, create: if request.auth != null
+                          && request.auth.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+      allow update: if false;
+    }
+
+    // قواعد جمع طلبات المرضى (patient_requests)
+    match /patient_requests/{requestId} {
+      // السماح بالقراءة للمستخدمين المصادقين
+      allow read: if request.auth != null;
+      
+      // السماح بالكتابة للمستخدمين المصادقين
+      allow write: if request.auth != null && (
+        request.auth.uid == resource.data.patientId ||
+        isAdmin()
+      );
+    }
+    
+    // قواعد جمع طلبات الرعاية (care_requests)
+    match /care_requests/{requestId} {
+      // السماح بالقراءة للمستخدمين المصادقين
+      allow read: if request.auth != null;
+      
+      // السماح بالكتابة:
+      // 1. إنشاء طلب جديد: السماح لأي مستخدم مصادق بإنشاء طلب
+      // 2. تحديث: المريض المالك أو الممرض المعني أو المسؤول
+      // 3. حذف: المريض المالك أو المسؤول
+      allow create: if request.auth != null && 
+                    request.resource.data.patientId != null &&
+                    request.resource.data.patientId == request.auth.uid;
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.patientId ||
+        request.auth.uid == resource.data.nurseId ||
+        isAdmin()
+      );
+      allow delete: if request.auth != null && (
+        request.auth.uid == resource.data.patientId ||
+        isAdmin()
+      );
+    }
+  }
+}

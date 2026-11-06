@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: nurset-ai-backend
+    runtime: docker
+    plan: free
+    region: frankfurt
+    buildCommand: docker build -t nurset-ai-backend .
+    startCommand: docker run -p $PORT:8000 nurset-ai-backend
+    envVars:
+      - key: PORT
+        value: 8000
+    healthCheckPath: /health
