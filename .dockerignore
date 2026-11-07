@@ -1,0 +1,29 @@
+.git
+.github
+.vscode
+.idea
+*.iml
+
+# Flutter / Dart project files (not needed for the Python backend image)
+lib/
+android/
+ios/
+web/
+windows/
+linux/
+macos/
+test/
+build/
+assets/
+
+# Python caches and virtualenvs
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.venv/
+**/venv/
+
+# Backend runtime artifacts
+backend/firebase_credentials.json
+backend/.env
+*.log
