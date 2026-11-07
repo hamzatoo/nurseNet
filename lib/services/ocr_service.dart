@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../config/api_config.dart';
@@ -60,10 +61,13 @@ class OCRService {
     try {
       final request = http.MultipartRequest('POST', uri)
         ..files.add(
+          // image_picker cache files may lack a known extension, which makes
+          // http send application/octet-stream - force the real MIME type.
           await http.MultipartFile.fromPath(
             'image',
             image.path,
             filename: 'prescription.jpg',
+            contentType: MediaType('image', 'jpeg'),
           ),
         );
       response = await request.send().timeout(_uploadTimeout);

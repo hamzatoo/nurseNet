@@ -18,7 +18,10 @@ router = APIRouter(prefix="/api", tags=["ocr"])
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
-ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
+# Mobile clients (image_picker cache files) often send application/octet-stream
+# because the cached file has no recognised extension - accept it and verify
+# the actual image bytes with Pillow instead of trusting the header.
+ALLOWED_CONTENT_TYPES = {"application/octet-stream", "binary/octet-stream"}
 
 # Arabic + English medication keywords for rule-based extraction
 MEDICATION_KEYWORDS = [
@@ -78,7 +81,25 @@ def _suffix_for(upload: UploadFile) -> str:
 
 def _content_type_allowed(upload: UploadFile) -> bool:
     content_type = (upload.content_type or "").lower()
-    return content_type.startswith("image/") or content_type in ALLOWED_CONTENT_TYPES
+    # Accept real image types plus generic binary types - magic bytes are
+    # verified with Pillow after the upload is saved.
+    return (
+        content_type.startswith("image/")
+        or content_type in ALLOWED_CONTENT_TYPES
+        or not content_type
+    )
+
+
+def _is_valid_image(image_path: str) -> bool:
+    """Verify the uploaded bytes are a decodable image via Pillow."""
+    try:
+        from PIL import Image
+
+        with Image.open(image_path) as img:
+            img.verify()
+        return True
+    except Exception:
+        return False
 
 
 def _extract_text_from_image(image_path: str) -> str:
@@ -252,6 +273,16 @@ async def ocr_prescription(image: UploadFile = File(...)):
                 "لم تصل أي صورة إلى الخادم.",
                 "أعد التقاط الصورة.",
                 status_code=400,
+            )
+
+        # Verify the payload is a real decodable image (magic bytes), since
+        # mobile clients may send a generic content type.
+        if not _is_valid_image(temporary_path):
+            return _error(
+                "unsupported_media_type",
+                "الملف المرسل ليس صورة صالحة.",
+                "أعد التقاط صورة الوصفة بصيغة JPG أو PNG.",
+                status_code=415,
             )
 
         # Extract text from image
