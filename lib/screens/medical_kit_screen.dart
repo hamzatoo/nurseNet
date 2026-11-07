@@ -9,6 +9,8 @@ import '../services/medication_service.dart';
 import '../services/ocr_service.dart';
 import 'add_medication_screen.dart';
 
+export 'package:image_picker/image_picker.dart' show ImageSource, XFile;
+
 /// Daily medication tracker rendered as a vertical timeline of time slots.
 class MedicalKitScreen extends StatefulWidget {
   const MedicalKitScreen({super.key});
@@ -1083,94 +1085,123 @@ class _MedicalKitScreenState extends State<MedicalKitScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Prescription OCR flow (unchanged behaviour)
+  // Prescription OCR flow
   // ---------------------------------------------------------------------------
 
+  bool _ocrBusy = false;
+
   Future<void> _scanPrescription() async {
+    if (_ocrBusy) return;
+    XFile? image;
+    var loadingOpen = false;
+
     try {
-      final imageUrl = await _ocrService.pickImage(source: ImageSource.camera);
+      image = await _ocrService.pickImage(source: ImageSource.camera);
+      if (image == null || !mounted) return;
 
-      if (imageUrl == null) return;
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
+      setState(() => _ocrBusy = true);
+      loadingOpen = true;
+      unawaited(
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const _OcrLoadingDialog(),
         ),
       );
 
-      final parsedData = await _ocrService.parsePrescription(imageUrl);
+      final parsedData = await _ocrService.parsePrescription(image);
 
       if (!mounted) return;
-      Navigator.pop(context); // Close loading dialog
+      loadingOpen = false;
+      Navigator.of(context, rootNavigator: true).pop();
 
-      if (parsedData['detected_duration'] == null) {
-        _showDurationSelectionDialog(parsedData, imageUrl);
-      } else {
-        final duration = parsedData['duration_days'] as int;
-        _createMedicationsFromOCR(parsedData, duration, imageUrl);
+      _showOcrReviewDialog(parsedData);
+    } on OcrException catch (e) {
+      if (mounted) {
+        if (loadingOpen) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+        _showOcrError(e.message, e.suggestion);
       }
     } catch (e) {
+      debugPrint('OCR flow failed: $e');
       if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('خطأ: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        if (loadingOpen) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+        _showOcrError('حدث خطأ غير متوقع أثناء مسح الوصفة.');
       }
+    } finally {
+      if (mounted) setState(() => _ocrBusy = false);
     }
   }
 
-  void _showDurationSelectionDialog(
-    Map<String, dynamic> parsedData,
-    String imageUrl,
-  ) {
-    showDialog(
+  void _showOcrError(String message, [String? suggestion]) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(suggestion == null ? message : '$message\n$suggestion'),
+        backgroundColor: const Color(0xFFEF4444),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+      ),
+    );
+  }
+
+  void _showOcrReviewDialog(Map<String, dynamic> parsedData) {
+    final medications = (parsedData['medications'] as List)
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    if (medications.isEmpty) {
+      _showOcrError('لم يتم العثور على أدوية في الوصفة.');
+      return;
+    }
+
+    showDialog<void>(
       context: context,
-      builder: (context) => DurationSelectionDialog(
-        onDurationSelected: (days) {
-          Navigator.pop(context);
-          _createMedicationsFromOCR(parsedData, days, imageUrl);
+      barrierDismissible: false,
+      builder: (dialogContext) => _OcrReviewDialog(
+        medications: medications,
+        detectedDuration: parsedData['detected_duration'] as int?,
+        confidence: (parsedData['confidence'] as num?)?.toDouble(),
+        onConfirm: (durationDays) {
+          Navigator.of(dialogContext).pop();
+          _createMedicationsFromOCR(medications, durationDays);
         },
+        onCancel: () => Navigator.of(dialogContext).pop(),
       ),
     );
   }
 
   Future<void> _createMedicationsFromOCR(
-    Map<String, dynamic> parsedData,
+    List<Map<String, dynamic>> medications,
     int durationDays,
-    String imageUrl,
   ) async {
     try {
-      final meds = parsedData['medications'] as List;
-
-      for (final medData in meds) {
+      for (final medData in medications) {
         final medication = _ocrService.createMedicationFromParsedData(
-          {'medications': [medData], 'imageUrl': imageUrl},
-          durationDays,
+          medData,
+          durationDays: durationDays,
         );
-
         await _medicationService.addMedication(medication);
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('تم إضافة ${meds.length} دواء بنجاح'),
-            backgroundColor: Colors.green,
+            content: Text('تم إضافة ${medications.length} دواء بنجاح ✓'),
+            backgroundColor: const Color(0xFF16A34A),
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
     } catch (e) {
+      debugPrint('Saving OCR medications failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('خطأ: $e'),
-            backgroundColor: Colors.red,
+            content: const Text('فشل حفظ بعض الأدوية. حاول الإضافة يدوياً.'),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -1494,62 +1525,267 @@ class _GlassIconButton extends StatelessWidget {
   }
 }
 
-class DurationSelectionDialog extends StatefulWidget {
-  final Function(int) onDurationSelected;
-
-  const DurationSelectionDialog({
-    super.key,
-    required this.onDurationSelected,
-  });
-
-  @override
-  State<DurationSelectionDialog> createState() => _DurationSelectionDialogState();
-}
-
-class _DurationSelectionDialogState extends State<DurationSelectionDialog> {
-  int _selectedDays = 7;
+/// Blocking spinner shown while the backend OCR endpoint is working.
+class _OcrLoadingDialog extends StatelessWidget {
+  const _OcrLoadingDialog();
 
   @override
   Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 44,
+              height: 44,
+              child: CircularProgressIndicator(
+                strokeWidth: 3.5,
+                valueColor: AlwaysStoppedAnimation(AppColors.primary),
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'جاري تحليل الوصفة…',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'يقرأ الذكاء الاصطناعي أسماء الأدوية والجرعات،\nقد يستغرق ذلك حتى 30 ثانية.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11.5,
+                height: 1.6,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shows the medications extracted by OCR so the patient can review them
+/// and pick the treatment duration before anything is saved.
+class _OcrReviewDialog extends StatefulWidget {
+  const _OcrReviewDialog({
+    required this.medications,
+    required this.onConfirm,
+    required this.onCancel,
+    this.detectedDuration,
+    this.confidence,
+  });
+
+  final List<Map<String, dynamic>> medications;
+  final int? detectedDuration;
+  final double? confidence;
+  final void Function(int durationDays) onConfirm;
+  final VoidCallback onCancel;
+
+  @override
+  State<_OcrReviewDialog> createState() => _OcrReviewDialogState();
+}
+
+class _OcrReviewDialogState extends State<_OcrReviewDialog> {
+  late int _selectedDays;
+
+  @override
+  void initState() {
+    super.initState();
+    final detected = widget.detectedDuration;
+    _selectedDays = detected != null && detected > 0 ? detected : 7;
+  }
+
+  static const List<int> _durationOptions = [7, 14, 30, 60, 90];
+
+  @override
+  Widget build(BuildContext context) {
+    final medications = widget.medications;
     return AlertDialog(
-      title: const Text('تحديد مدة العلاج'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
         children: [
-          const Text('لم يتم تحديد مدة العلاج في الوصفة'),
-          const SizedBox(height: 16),
-          const Text('كم يوماً ستستخدم هذه الأدوية؟'),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            children: [7, 14, 30, 60, 90].map((days) {
-              final isSelected = _selectedDays == days;
-              return ChoiceChip(
-                label: Text('$days يوم'),
-                selected: isSelected,
-                onSelected: (selected) {
-                  setState(() {
-                    _selectedDays = days;
-                  });
-                },
-                selectedColor: AppColors.primary,
-              );
-            }).toList(),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF16A34A).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.document_scanner_rounded,
+              color: Color(0xFF16A34A),
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'نتيجة مسح الوصفة',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (widget.confidence != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    'دقة التعرف: ${(widget.confidence! * 100).round()}%',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ),
+              Text(
+                'تم العثور على ${medications.length} دواء:',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const SizedBox(height: 10),
+              for (final med in medications) _medTile(med),
+              const SizedBox(height: 16),
+              const Text(
+                'مدة العلاج',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _durationOptions.map((days) {
+                  final isSelected = _selectedDays == days;
+                  return ChoiceChip(
+                    label: Text('$days يوم'),
+                    selected: isSelected,
+                    onSelected: (_) => setState(() => _selectedDays = days),
+                    selectedColor: AppColors.primary,
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.white : AppColors.textDark,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'يمكنك تعديل البيانات يدوياً لاحقاً من بطاقة الدواء.',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  height: 1.6,
+                  color: Colors.grey[500],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: widget.onCancel,
           child: const Text('إلغاء'),
         ),
-        ElevatedButton(
-          onPressed: () {
-            widget.onDurationSelected(_selectedDays);
-          },
-          child: const Text('تأكيد'),
+        ElevatedButton.icon(
+          onPressed: () => widget.onConfirm(_selectedDays),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          icon: const Icon(Icons.check_rounded, size: 18),
+          label: const Text('حفظ الأدوية'),
         ),
       ],
+    );
+  }
+
+  Widget _medTile(Map<String, dynamic> med) {
+    final name = (med['name'] as String?) ?? 'دواء';
+    final dosage = (med['dosage'] as String?) ?? '';
+    final frequency = Medication.parseMedicationFrequency(
+      med['frequency'] as String?,
+    );
+    final type = Medication.parseMedicationType(med['type'] as String?);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFEDF2F9)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(type.typeIcon, size: 18, color: AppColors.primary),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  [
+                    if (dosage.isNotEmpty) dosage,
+                    type.typeDisplay,
+                    frequency.frequencyDisplay,
+                  ].join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
