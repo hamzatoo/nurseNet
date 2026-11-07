@@ -26,7 +26,12 @@ class HeartRateService {
   HeartRateService._();
   static final HeartRateService instance = HeartRateService._();
 
-  static const Duration _uploadTimeout = Duration(seconds: 120);
+  // Covers the worst case: Render free-tier cold start (~50s) plus rPPG
+  // processing (~15s). The UI cancel button keeps the user unblocked.
+  static const Duration _uploadTimeout = Duration(seconds: 75);
+  // Guards against a stalled response body - without this the request could
+  // hang forever after the server sends headers.
+  static const Duration _readTimeout = Duration(seconds: 30);
 
   /// Uploads the recorded clip and returns the analysed reading.
   Future<HeartRateReading> measure(File video) async {
@@ -73,7 +78,23 @@ class HeartRateService {
       );
     }
 
-    final body = await response.stream.bytesToString();
+    final String body;
+    try {
+      body = await response.stream.bytesToString().timeout(_readTimeout);
+    } on TimeoutException {
+      throw const HeartRateException(
+        'timeout',
+        'استغرق استقبال النتيجة وقتاً أطول من المتوقع.',
+        suggestion: 'أعد المحاولة بعد قليل.',
+      );
+    } catch (error) {
+      debugPrint('Heart rate response read failed: $error');
+      throw const HeartRateException(
+        'invalid_response',
+        'تعذّر قراءة رد الخادم.',
+        suggestion: 'أعد المحاولة بعد قليل.',
+      );
+    }
     Map<String, dynamic> payload;
     try {
       payload = jsonDecode(body) as Map<String, dynamic>;

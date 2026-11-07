@@ -103,7 +103,9 @@ class _HeartRateCaptureScreenState extends State<HeartRateCaptureScreen>
     });
 
     try {
-      _cameras = _cameras.isEmpty ? await availableCameras() : _cameras;
+      _cameras = _cameras.isEmpty
+          ? await availableCameras().timeout(const Duration(seconds: 10))
+          : _cameras;
       if (_cameras.isEmpty) {
         _fail(
           'لا توجد كاميرا متاحة على هذا الجهاز.',
@@ -129,7 +131,7 @@ class _HeartRateCaptureScreenState extends State<HeartRateCaptureScreen>
         fps: 30,
       );
 
-      await controller.initialize();
+      await controller.initialize().timeout(const Duration(seconds: 15));
       if (_disposed) {
         await controller.dispose();
         return;
@@ -192,7 +194,9 @@ class _HeartRateCaptureScreenState extends State<HeartRateCaptureScreen>
 
       if (!mounted || token != _sequence) return;
 
-      await controller.startVideoRecording();
+      await controller
+          .startVideoRecording()
+          .timeout(const Duration(seconds: 10));
       if (!mounted || token != _sequence) {
         await controller.stopVideoRecording();
         return;
@@ -204,7 +208,9 @@ class _HeartRateCaptureScreenState extends State<HeartRateCaptureScreen>
       await Future<void>.delayed(_recordingDuration);
       if (!mounted || token != _sequence) return;
 
-      final clip = await controller.stopVideoRecording();
+      final clip = await controller
+          .stopVideoRecording()
+          .timeout(const Duration(seconds: 10));
       _progress.stop();
       if (!mounted || token != _sequence) return;
 
