@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for Firebase, Firestore, and backend API calls -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Contactless heart-rate measurement records the face with the camera. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />

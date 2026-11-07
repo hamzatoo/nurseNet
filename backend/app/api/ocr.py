@@ -10,6 +10,10 @@ from typing import Optional
 from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import JSONResponse
 
+# easyocr pulls in PyTorch (~2 GB RAM) which exceeds free-tier hosting limits.
+# It is only used when ENABLE_EASYOCR=true is set on a machine with enough RAM.
+_ENABLE_EASYOCR = os.environ.get("ENABLE_EASYOCR", "false").lower() == "true"
+
 router = APIRouter(prefix="/api", tags=["ocr"])
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -78,20 +82,23 @@ def _content_type_allowed(upload: UploadFile) -> bool:
 
 
 def _extract_text_from_image(image_path: str) -> str:
-    """Extract text using available OCR libraries (pytesseract, easyocr, or fallback)."""
+    """Extract text using pytesseract (lightweight). easyocr only if explicitly enabled."""
     text_parts = []
 
-    # Try pytesseract first (best for printed text)
+    # Primary: pytesseract + tesseract binary (installed in the Docker image)
     try:
         import pytesseract
         from PIL import Image
 
         img = Image.open(image_path)
-        # Try Arabic first, fallback to English
+        # Try Arabic+English combined, fallback to English only
         try:
-            text = pytesseract.image_to_string(img, lang="ara")
+            text = pytesseract.image_to_string(img, lang="ara+eng")
         except Exception:
-            text = pytesseract.image_to_string(img, lang="eng")
+            try:
+                text = pytesseract.image_to_string(img, lang="eng")
+            except Exception:
+                text = pytesseract.image_to_string(img)
         if text.strip():
             text_parts.append(text)
     except ImportError:
@@ -99,8 +106,8 @@ def _extract_text_from_image(image_path: str) -> str:
     except Exception:
         pass
 
-    # Try easyocr as fallback
-    if not text_parts:
+    # Optional heavy fallback: easyocr (requires ENABLE_EASYOCR=true + enough RAM)
+    if not text_parts and _ENABLE_EASYOCR:
         try:
             import easyocr
             reader = easyocr.Reader(["ar", "en"], gpu=False)
@@ -108,23 +115,6 @@ def _extract_text_from_image(image_path: str) -> str:
             text = " ".join([r[1] for r in results])
             if text.strip():
                 text_parts.append(text)
-        except ImportError:
-            pass
-        except Exception:
-            pass
-
-    # Try OpenCV + Tesseract via cv2
-    if not text_parts:
-        try:
-            import cv2
-            img = cv2.imread(image_path)
-            if img is not None:
-                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                # Simple threshold for better OCR
-                _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                text = pytesseract.image_to_string(thresh, lang="ara+eng")
-                if text.strip():
-                    text_parts.append(text)
         except Exception:
             pass
 

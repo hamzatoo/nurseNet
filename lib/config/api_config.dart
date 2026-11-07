@@ -5,18 +5,15 @@ class ApiConfig {
   // منع إنشاء نسخ من هذه الفئة
   ApiConfig._();
 
-  /// عنوان السيرفر
+  /// عنوان السيرفر السحابي (Render.com)
   ///
-  /// للإنتاج (Cloud):
-  /// استخدم عنوان URL العام من Render/Railway/HF Spaces
-  /// مثال: 'https://nurset-ai-backend.onrender.com'
+  /// للإنتاج:
+  /// يستخدم هذا العنوان في كل الأوضاع (debug و release)
   ///
-  /// للتطوير المحلي:
+  /// للتطوير المحلي (اختياري):
   /// - المحاكي: 'http://10.0.2.2:8000'
   /// - الجهاز الحقيقي: 'http://192.168.1.110:8000' (IP جهازك)
-  static String baseUrl = kDebugMode 
-      ? 'http://10.0.2.2:8000'  // للمحاكي المحلي
-      : 'https://nurset-ai-backend.onrender.com';  // ← غيّر هذا إلى URL السيرفر السحابي بعد النشر
+  static String baseUrl = 'https://nursenet-backend.onrender.com';
 
   /// منفذ السيرفر
   static const int serverPort = 8000;
