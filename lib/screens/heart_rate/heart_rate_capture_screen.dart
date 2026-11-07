@@ -6,6 +6,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../models/heart_rate_reading.dart';
 import '../../services/heart_rate_service.dart';
 import '../../theme.dart';
 import 'heart_rate_result_screen.dart';
@@ -35,6 +36,9 @@ class _HeartRateCaptureScreenState extends State<HeartRateCaptureScreen>
 
   CameraController? _controller;
   List<CameraDescription> _cameras = const [];
+
+  /// Cameras eligible for face capture - front-facing preferred, falls back to all.
+  List<CameraDescription> _captureCameras = const [];
   int _cameraIndex = 0;
 
   late final AnimationController _progress = AnimationController(
@@ -108,11 +112,19 @@ class _HeartRateCaptureScreenState extends State<HeartRateCaptureScreen>
         return;
       }
 
-      _cameraIndex %= _cameras.length;
-      final camera = _cameras[_cameraIndex];
+      // Prefer the front camera - rPPG needs the user's face/forehead.
+      final frontCameras = _cameras
+          .where((c) => c.lensDirection == CameraLensDirection.front)
+          .toList();
+      _captureCameras = frontCameras.isNotEmpty ? frontCameras : _cameras;
+
+      _cameraIndex %= _captureCameras.length;
+      final camera = _captureCameras[_cameraIndex];
       final controller = CameraController(
         camera,
-        ResolutionPreset.high,
+        // Medium resolution: enough forehead detail for rPPG, ~4x smaller
+        // upload than high res, which keeps the request fast on mobile data.
+        ResolutionPreset.medium,
         enableAudio: false,
         fps: 30,
       );
@@ -197,7 +209,16 @@ class _HeartRateCaptureScreenState extends State<HeartRateCaptureScreen>
       if (!mounted || token != _sequence) return;
 
       setState(() => _phase = _CapturePhase.analysing);
-      final reading = await HeartRateService.instance.measure(File(clip.path));
+      final clipFile = File(clip.path);
+      HeartRateReading reading;
+      try {
+        reading = await HeartRateService.instance.measure(clipFile);
+      } finally {
+        // Free storage regardless of success/failure/cancellation.
+        try {
+          if (await clipFile.exists()) await clipFile.delete();
+        } catch (_) {}
+      }
       if (!mounted || token != _sequence) return;
 
       HapticFeedback.mediumImpact();
@@ -233,12 +254,20 @@ class _HeartRateCaptureScreenState extends State<HeartRateCaptureScreen>
   }
 
   Future<void> _switchCamera() async {
-    if (_cameras.length < 2 || _phase == _CapturePhase.analysing) return;
+    if (_captureCameras.length < 2 || _phase == _CapturePhase.analysing) return;
     _sequence++;
     _progress.stop();
-    _cameraIndex = (_cameraIndex + 1) % _cameras.length;
+    _cameraIndex = (_cameraIndex + 1) % _captureCameras.length;
     _torchOn = false;
     await _initializeCamera();
+  }
+
+  /// Lets the user bail out while the backend is still analysing.
+  /// The HTTP request finishes in the background; its result is ignored.
+  Future<void> _cancelAnalysis() async {
+    _sequence++;
+    _progress.stop();
+    if (mounted) Navigator.of(context).maybePop();
   }
 
   Future<void> _cancel() async {
@@ -316,7 +345,7 @@ class _HeartRateCaptureScreenState extends State<HeartRateCaptureScreen>
         children: [
           _RoundButton(icon: Icons.close_rounded, onTap: _cancel),
           const Spacer(),
-          if (_cameras.length > 1)
+          if (_captureCameras.length > 1)
             Padding(
               padding: const EdgeInsets.only(right: 10),
               child: _RoundButton(
@@ -472,6 +501,22 @@ class _HeartRateCaptureScreenState extends State<HeartRateCaptureScreen>
                   color: AppColors.textDark.withValues(alpha: 0.55),
                   fontSize: 12,
                   height: 1.6,
+                ),
+              ),
+              const SizedBox(height: 22),
+              TextButton.icon(
+                onPressed: _cancelAnalysis,
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: AppColors.textDark.withValues(alpha: 0.6),
+                ),
+                label: Text(
+                  'إلغاء والعودة',
+                  style: TextStyle(
+                    color: AppColors.textDark.withValues(alpha: 0.6),
+                    fontSize: 13,
+                  ),
                 ),
               ),
             ],
