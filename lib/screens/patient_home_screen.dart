@@ -11,6 +11,7 @@ import 'patient_requests_screen.dart';
 import 'nurse_profile_screen.dart';
 import 'medical_kit_screen.dart';
 import 'heart_rate/heart_rate_intro_screen.dart';
+import 'damascus_clinics_screen.dart';
 
 class PatientHomeScreen extends StatefulWidget {
   const PatientHomeScreen({super.key});
@@ -71,6 +72,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                   _buildCareTypeSelector(),
                   const SizedBox(height: 25),
                   _buildAIPredictionQuickAction(),
+                  const SizedBox(height: 14),
+                  _buildClinicsQuickAction(),
                   const SizedBox(height: 14),
                   _buildHeartRateCard(),
                   const SizedBox(height: 25),
@@ -467,6 +470,86 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildClinicsQuickAction() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const DamascusClinicsScreen(),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.local_hospital_rounded,
+                color: AppColors.primary,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'عيادات ومراكز دمشق',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'تصفح العيادات والتخصصات وأرقام الاتصال',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.arrow_forward_ios,
+                color: AppColors.primary,
+                size: 18,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

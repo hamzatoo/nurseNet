@@ -1,0 +1,225 @@
+{
+  "clinics_damascus": [
+    {
+      "id": "clinic_01",
+      "name": "مركز المزة الطبي Emmc",
+      "region": "المزة",
+      "address": "منطقة المزة، دمشق",
+      "coordinates": {
+        "latitude": 33.5138,
+        "longitude": 36.2765
+      },
+      "phone": "011 666 4540",
+      "specialties": ["عيادات تخصصية شاملة", "عناية طبية متكاملة"],
+      "image_url": "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=500"
+    },
+    {
+      "id": "clinic_02",
+      "name": "المركز التخصصي للعناية الطبية",
+      "region": "المزة",
+      "address": "المزة، دمشق",
+      "coordinates": {
+        "latitude": 33.5120,
+        "longitude": 36.2740
+      },
+      "phone": "غير متوفر",
+      "specialties": ["استشارات طبية تخصصية", "متابعة علاجية"],
+      "image_url": "https://images.unsplash.com/photo-1586773860418-d37222d8fce3?w=500"
+    },
+    {
+      "id": "clinic_03",
+      "name": "المركز الحضاري الطبي",
+      "region": "المزة",
+      "address": "شارع ابن المقفع، المزة، دمشق",
+      "coordinates": {
+        "latitude": 33.5105,
+        "longitude": 36.2780
+      },
+      "phone": "011 612 2830",
+      "specialties": ["خدمات طبية إسعافية", "تخصصات باطنية وعامة"],
+      "image_url": "https://images.unsplash.com/photo-1538108149393-fbbd81895907?w=500"
+    },
+    {
+      "id": "clinic_04",
+      "name": "مجمع الشام الطبي",
+      "region": "المزة",
+      "address": "المزة، دمشق",
+      "coordinates": {
+        "latitude": 33.5150,
+        "longitude": 36.2710
+      },
+      "phone": "متاح بالمركز",
+      "specialties": ["عيادات متعددة", "اختصاصات طبية على مدار الساعة"],
+      "image_url": "https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=500"
+    },
+    {
+      "id": "clinic_05",
+      "name": "عيادات المزة التخصصية",
+      "region": "المزة",
+      "address": "المزة، دمشق",
+      "coordinates": {
+        "latitude": 33.5112,
+        "longitude": 36.2755
+      },
+      "phone": "متاح بالمركز",
+      "specialties": ["عيادات طبية متخصصة ومجهزة"],
+      "image_url": "https://images.unsplash.com/photo-1516549655169-df83a0774514?w=500"
+    },
+    {
+      "id": "clinic_06",
+      "name": "عيادة الشام",
+      "region": "البرامكة",
+      "address": "منطقة المجلس النيابي، دمشق",
+      "coordinates": {
+        "latitude": 33.5101,
+        "longitude": 36.2912
+      },
+      "phone": "011 332 2223",
+      "specialties": ["عيادات إسعافية وتخصصية متكاملة"],
+      "image_url": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=500"
+    },
+    {
+      "id": "clinic_07",
+      "name": "عيادات إشراق الطبية",
+      "region": "البرامكة والمهاجرين",
+      "address": "منطقة دمشق الكبرى",
+      "coordinates": {
+        "latitude": 33.5180,
+        "longitude": 36.2850
+      },
+      "phone": "011 213 355",
+      "specialties": ["عيادات تخصصية شاملة وتشخيصية"],
+      "image_url": "https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=500"
+    },
+    {
+      "id": "clinic_08",
+      "name": "عيادات البهاء",
+      "region": "دمشق",
+      "address": "دمشق",
+      "coordinates": {
+        "latitude": 33.5130,
+        "longitude": 36.2900
+      },
+      "phone": "0994 522 318",
+      "specialties": ["عيادات طبية واستشارات صحية"],
+      "image_url": "https://images.unsplash.com/photo-1512677837878-c775dc7e9fd3?w=500"
+    },
+    {
+      "id": "clinic_09",
+      "name": "مجمع العثمان الطبي الخيري",
+      "region": "ركن الدين",
+      "address": "ركن الدين، دمشق",
+      "coordinates": {
+        "latitude": 33.5285,
+        "longitude": 36.3021
+      },
+      "phone": "011 447 1891",
+      "specialties": ["أطفال", "عظمية", "باطنية", "نسائية"],
+      "image_url": "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?w=500"
+    },
+    {
+      "id": "clinic_10",
+      "name": "مركز الزهراء الطبي",
+      "region": "ركن الدين",
+      "address": "ركن الدين، دمشق",
+      "coordinates": {
+        "latitude": 33.5270,
+        "longitude": 36.3040
+      },
+      "phone": "011 447 1220",
+      "specialties": ["خدمات طبية", "عيادات تخصصية مساندة"],
+      "image_url": "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=500"
+    },
+    {
+      "id": "clinic_11",
+      "name": "مستوصف ركن الدين",
+      "region": "ركن الدين",
+      "address": "ركن الدين، دمشق",
+      "coordinates": {
+        "latitude": 33.5260,
+        "longitude": 36.3010
+      },
+      "phone": "غير متوفر",
+      "specialties": ["رعاية صحية أولية", "عيادات عامة"],
+      "image_url": "https://images.unsplash.com/photo-1532938911079-1b06ac7ceec7?w=500"
+    },
+    {
+      "id": "clinic_12",
+      "name": "مخبر ركن الدين",
+      "region": "ركن الدين",
+      "address": "شارع أسد الدين، ركن الدين، دمشق",
+      "coordinates": {
+        "latitude": 33.5290,
+        "longitude": 36.3035
+      },
+      "phone": "011 277 3837",
+      "specialties": ["تحاليل طبية مخبرية تخصصية"],
+      "image_url": "https://images.unsplash.com/photo-1579165466741-7f35e4755660?w=500"
+    },
+    {
+      "id": "clinic_13",
+      "name": "مركز برزة الطبي",
+      "region": "مساكن برزة",
+      "address": "مساكن برزة، دمشق",
+      "coordinates": {
+        "latitude": 33.5410,
+        "longitude": 36.3150
+      },
+      "phone": "متاح بالمركز",
+      "specialties": ["عيادات طبية وصحية لخدمة أهالي المنطقة"],
+      "image_url": "https://images.unsplash.com/photo-1551076805-e1869033e561?w=500"
+    },
+    {
+      "id": "clinic_14",
+      "name": "مركز الحكيم الطبي",
+      "region": "مساكن برزة",
+      "address": "مساكن برزة، دمشق",
+      "coordinates": {
+        "latitude": 33.5390,
+        "longitude": 36.3120
+      },
+      "phone": "متاح بالمركز",
+      "specialties": ["خدمات علاجية", "عيادات تخصصية"],
+      "image_url": "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=500"
+    },
+    {
+      "id": "clinic_15",
+      "name": "مركز الصلخدي الطبي",
+      "region": "مساكن برزة",
+      "address": "شارع بدر، مساكن برزة، دمشق",
+      "coordinates": {
+        "latitude": 33.5425,
+        "longitude": 36.3175
+      },
+      "phone": "011 512 3880",
+      "specialties": ["مجمع طبي متكامل", "عيادات إسعافية وتخصصية"],
+      "image_url": "https://images.unsplash.com/photo-1516549655169-df83a0774514?w=500"
+    },
+    {
+      "id": "clinic_16",
+      "name": "عيادة د تيسير صالح",
+      "region": "مساكن برزة",
+      "address": "مساكن برزة، دمشق",
+      "coordinates": {
+        "latitude": 33.5400,
+        "longitude": 36.3140
+      },
+      "phone": "0959 509 801",
+      "specialties": ["عيادة طبية تخصصية خاصة"],
+      "image_url": "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=500"
+    },
+    {
+      "id": "clinic_17",
+      "name": "مستوصف الهلال الاحمر",
+      "region": "مساكن برزة",
+      "address": "مساكن برزة، دمشق",
+      "coordinates": {
+        "latitude": 33.5380,
+        "longitude": 36.3110
+      },
+      "phone": "متاح بالمركز",
+      "specialties": ["رعاية طبية وإسعافية", "متابعة صحية"],
+      "image_url": "https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=500"
+    }
+  ]
+}
