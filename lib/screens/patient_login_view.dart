@@ -1041,6 +1041,7 @@ class _PatientSignUpViewState extends State<PatientSignUpView> {
         'medicalCategory': _selectedCategory,
         'medicalTags': allMedicalConditions,
         'medicalDescription': _diagnosisController.text.trim(),
+        'age': int.tryParse(_ageController.text.trim()) ?? 0,
       };
 
       await FirebaseFirestore.instance

@@ -16,28 +16,39 @@ class AIService:
         self.scaler = None
         self.vectorizer = None
         self.providers_df = None
+        # Patient need-classification model (SVM trained on patients_dataset.csv)
+        self.patient_model = None
+        self.patient_scaler = None
+        self.patient_vectorizer = None
+        self.patient_label_encoder = None
+        self.patient_metadata = None
         self._load_models()
+        self._load_patient_models()
         self._load_providers_dataset()
-    
+
+    def _ai_dir(self):
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        return os.path.join(base_path, "ai_service")
+
     def _load_models(self):
         try:
             base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
             model_path = os.path.join(base_path, settings.ai_model_path)
             scaler_path = os.path.join(base_path, settings.ai_scaler_path)
             vectorizer_path = os.path.join(base_path, "ai_service", "vectorizer.pkl")
-            
+
             if os.path.exists(model_path):
                 self.model = joblib.load(model_path)
                 logger.info("✅ Model loaded successfully")
             else:
                 logger.warning(f"⚠️ Model file not found at: {model_path}")
-            
+
             if os.path.exists(scaler_path):
                 self.scaler = joblib.load(scaler_path)
                 logger.info("✅ Scaler loaded successfully")
             else:
                 logger.warning(f"⚠️ Scaler file not found at: {scaler_path}")
-            
+
             if os.path.exists(vectorizer_path):
                 self.vectorizer = joblib.load(vectorizer_path)
                 logger.info("✅ Vectorizer loaded successfully")
@@ -46,12 +57,39 @@ class AIService:
         except Exception as e:
             logger.error(f"❌ Error loading AI models: {e}")
 
+    def _load_patient_models(self):
+        """Load the patient SVM + its scaler/vectorizer/encoder/metadata."""
+        try:
+            d = self._ai_dir()
+            paths = {
+                "patient_model": "patient_svm_model.pkl",
+                "patient_scaler": "patient_scaler.pkl",
+                "patient_vectorizer": "patient_vectorizer.pkl",
+                "patient_label_encoder": "patient_label_encoder.pkl",
+                "patient_metadata": "patient_metadata.pkl",
+            }
+            loaded = {}
+            for attr, fname in paths.items():
+                p = os.path.join(d, fname)
+                if os.path.exists(p):
+                    loaded[attr] = joblib.load(p)
+                else:
+                    logger.warning(f"⚠️ Patient model file missing: {p}")
+            self.patient_model = loaded.get("patient_model")
+            self.patient_scaler = loaded.get("patient_scaler")
+            self.patient_vectorizer = loaded.get("patient_vectorizer")
+            self.patient_label_encoder = loaded.get("patient_label_encoder")
+            self.patient_metadata = loaded.get("patient_metadata")
+            if self.patient_model is not None:
+                logger.info("✅ Patient SVM model loaded successfully")
+        except Exception as e:
+            logger.error(f"❌ Error loading patient models: {e}")
+
     def _load_providers_dataset(self):
         """Load the Damascus healthcare providers dataset with dynamic reload support"""
         try:
-            base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            dataset_path = os.path.join(base_path, "ai_service", "damascus_providers_fixed.csv")
-            
+            dataset_path = os.path.join(self._ai_dir(), "damascus_providers_fixed.csv")
+
             if os.path.exists(dataset_path):
                 self.providers_df = pd.read_csv(dataset_path, encoding='utf-8-sig')
                 logger.info(f"✅ Loaded {len(self.providers_df)} providers from dataset")
@@ -179,13 +217,15 @@ class AIService:
                 "error": str(e)
             }
 
-    def match_providers(self, patient_data):
+    def match_providers(self, patient_data, predicted_specialty=None):
         """
         Match providers based on patient data using both SVM results and rule-based matching
-        
+
         Args:
             patient_data: Dictionary containing medicalCategory, medicalTags, location
-            
+            predicted_specialty: Optional specialty predicted by the patient SVM;
+                                 providers matching it get a strong alignment bonus.
+
         Returns:
             List of matched providers with scores
         """
@@ -193,18 +233,21 @@ class AIService:
             if self.providers_df is None or self.providers_df.empty:
                 logger.warning("⚠️ No providers dataset available")
                 return []
-            
+
             logger.info(f"🏥 Matching providers for patient data: {patient_data}")
-            
+            if predicted_specialty:
+                logger.info(f"🎯 SVM predicted care specialty: {predicted_specialty}")
+
             # Extract patient data
             medical_category = patient_data.get('medicalCategory', '')
             medical_tags = patient_data.get('medicalTags', [])
             location = patient_data.get('location', '')
-            
+
             # Normalize inputs
             normalized_category = self._normalize_arabic_text(medical_category)
             normalized_location = self._normalize_location(location)
             normalized_tags = [self._normalize_arabic_text(tag) for tag in medical_tags]
+            normalized_pred_spec = self._normalize_arabic_text(str(predicted_specialty or ''))
             
             logger.info(f"🔤 Normalized category: {normalized_category}")
             logger.info(f"📍 Normalized location: {normalized_location}")
@@ -223,6 +266,14 @@ class AIService:
                 provider_services = [self._normalize_arabic_text(service) 
                                    for service in str(provider['services']).split(',')]
                 
+                # 0. SVM-predicted specialty alignment (strongest signal: +50)
+                if normalized_pred_spec and provider_specialty:
+                    if (normalized_pred_spec in provider_specialty
+                            or provider_specialty in normalized_pred_spec
+                            or normalized_pred_spec in provider_specialty.replace(' ', '')):
+                        score += 50
+                        match_reasons.append(f"تخصص مطابق لتنبؤ AI: {provider['specialty']}")
+
                 # 1. Specialty matching (40 points max)
                 if self._is_specialty_match(normalized_category, provider_specialty):
                     score += 40
@@ -318,6 +369,94 @@ class AIService:
             return True
         
         return False
+
+    # ------------------------------------------------------------------
+    # Patient need classification (SVM trained on patients_dataset.csv)
+    # ------------------------------------------------------------------
+    def predict_patient_need(self, patient_data: dict) -> dict:
+        """Predict the required care specialty for a patient case.
+
+        Rebuilds the exact same feature vector used during training
+        (10 numerical + TF-IDF text features) and returns the predicted
+        specialty + decision confidence via predict_proba.
+        """
+        if self.patient_model is None:
+            return {"status": "error", "error": "patient model not loaded"}
+
+        try:
+            meta = self.patient_metadata or {}
+            loc_map = meta.get("location_mapping", {})
+            cat_map = meta.get("category_mapping", {})
+            urg_map = meta.get("urgency_mapping", {"طارئ": 3, "متوسط": 2, "يومي": 1, "روتيني": 1, "مستمر": 1})
+
+            # --- parse + normalize patient fields (same rules as training) ---
+            age = float(patient_data.get("age") or 0)
+            gender = str(patient_data.get("gender") or "")
+            gender_f = 1.0 if "أنثى" in gender or gender.lower() == "female" else 0.0
+            location = self._normalize_location(str(patient_data.get("location") or ""))
+            category = self._normalize_arabic_text(str(patient_data.get("medicalCategory") or ""))
+            tags = patient_data.get("medicalTags") or []
+            if isinstance(tags, str):
+                tags = [t.strip() for t in tags.split(",") if t.strip()]
+            disease_count = float(len(tags))
+            # severity heuristic: emergency/resident flags + tag count
+            urgency_raw = str(patient_data.get("careUrgency") or "")
+            urgency = urg_map.get(urgency_raw, 1) / 3.0
+            needs_resident = 1.0 if patient_data.get("needsResidentNurse") else 0.0
+            diagnosis = str(patient_data.get("medicalDescription") or "")
+            # fold tags into diagnosis text so TF-IDF sees symptom vocabulary
+            tags_text = " ".join(str(t) for t in tags)
+            full_text = self._normalize_arabic_text(f"{diagnosis} {tags_text} {category}")
+
+            # recover original (un-normalized) keys for the fixed mappings
+            raw_location = str(patient_data.get("location") or "")
+            raw_category = str(patient_data.get("medicalCategory") or "")
+            loc_enc = loc_map.get(raw_location, loc_map.get(location, 0))
+            cat_enc = cat_map.get(raw_category, cat_map.get(category, 0))
+
+            sev = 2.0 if needs_resident or urgency_raw == "طارئ" else (2.0 if disease_count >= 3 else 1.5)
+            sev = min(sev, 3.0)
+
+            numerical = np.array([[
+                age / 100.0,
+                gender_f,
+                loc_enc / 16.0,
+                cat_enc / 7.0,
+                min(disease_count, 10) / 10.0,
+                sev / 3.0,
+                needs_resident,
+                urgency,
+                min(disease_count * sev, 30) / 30.0,
+                (age / 100.0) * (sev / 3.0),
+            ]], dtype=np.float64)
+
+            X_text = self.patient_vectorizer.transform([full_text]).toarray()
+            X = np.hstack([numerical, X_text])
+            X_scaled = self.patient_scaler.transform(X)
+
+            pred_idx = int(self.patient_model.predict(X_scaled)[0])
+            predicted = str(self.patient_label_encoder.inverse_transform([pred_idx])[0])
+
+            confidence = 0.0
+            if hasattr(self.patient_model, "predict_proba"):
+                proba = self.patient_model.predict_proba(X_scaled)[0]
+                confidence = float(proba[pred_idx])
+            elif hasattr(self.patient_model, "decision_function"):
+                # distance-to-margin proxy normalized to [0,1]
+                df = self.patient_model.decision_function(X_scaled)
+                confidence = float(1.0 / (1.0 + np.exp(-abs(float(np.max(df))))))
+
+            # map predicted specialty to provider specialty vocabulary:
+            # patient classes like 'رعاية مسنين'/'تمريض منزلي' exist in providers too.
+            return {
+                "status": "success",
+                "predicted_specialty": predicted,
+                "confidence": round(confidence, 3),
+                "features_shape": list(X.shape),
+            }
+        except Exception as e:
+            logger.error(f"❌ predict_patient_need failed: {e}")
+            return {"status": "error", "error": str(e)}
 
 
 ai_service = AIService()

@@ -126,10 +126,18 @@ class _PredictionInputScreenState extends State<PredictionInputScreen> {
       debugPrint('الميزات المستخرجة للـ AI: ${aiFeatures.length} features');
       
       // 2. Send to AI API with patient data
+      // Enrich with fields required by the patient-need SVM
+      final patientDataForApi = Map<String, dynamic>.from(_patientData!);
+      patientDataForApi['age'] ??= 0;
+      patientDataForApi['gender'] ??= 'ذكر';
+      patientDataForApi['needsResidentNurse'] ??= false;
+      patientDataForApi['careUrgency'] ??= 'متوسط';
+      patientDataForApi['medicalDescription'] ??= '';
+
       try {
         final result = await _apiService.sendPredictionWithPatientData(
           features: aiFeatures,
-          patientData: _patientData!,
+          patientData: patientDataForApi,
         );
 
         debugPrint('نتيجة API: $result');

@@ -80,13 +80,24 @@ async def make_prediction(request: PredictionRequest, user_data: Optional[dict] 
         if result["status"] == "error":
             raise HTTPException(status_code=500, detail=result["error"])
         
-        # Get provider matches if patient data is provided
+        # Patient need classification (SVM trained on patients_dataset.csv)
+        # + provider matching guided by the predicted specialty.
+        predicted_specialty = None
+        patient_need = None
         matched_providers = []
         if request.patient_data:
             print(f"🏥 Matching providers for patient data: {request.patient_data}")
-            matched_providers = ai_service.match_providers(request.patient_data)
+            need_result = ai_service.predict_patient_need(request.patient_data)
+            patient_need = need_result
+            if need_result.get("status") == "success":
+                predicted_specialty = need_result.get("predicted_specialty")
+                print(f"🎯 SVM predicted care need: {predicted_specialty} "
+                      f"(confidence={need_result.get('confidence')})")
+            matched_providers = ai_service.match_providers(
+                request.patient_data, predicted_specialty=predicted_specialty
+            )
             print(f"✅ Found {len(matched_providers)} matched providers")
-        
+
         saved = False
         # حفظ التنبؤ في Firestore إذا طلب المستخدم وكان Firebase متاحاً
         if request.save_to_firestore and firebase_manager.is_initialized:
@@ -97,12 +108,13 @@ async def make_prediction(request: PredictionRequest, user_data: Optional[dict] 
                     features=features,
                     prediction=result["prediction"]
                 )
-        
+
         return {
-            "prediction": result["prediction"], 
+            "prediction": result["prediction"],
             "status": result["status"],
             "saved": saved,
-            "matched_providers": matched_providers
+            "matched_providers": matched_providers,
+            "patient_need": patient_need,
         }
     except HTTPException as he:
         print(f"❌ HTTP Exception in prediction endpoint: {he.detail}")
