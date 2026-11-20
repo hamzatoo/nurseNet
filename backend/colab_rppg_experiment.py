@@ -37,7 +37,13 @@ HOW TO USE:
 =====================================================================
 """
 
-# %% ==================== CELL 1: IMPORTS ====================
+# %% ==================== CELL 1: INSTALLS + IMPORTS ====================
+# OpenCV is NOT preinstalled on current Colab runtimes - install it first.
+import subprocess, sys
+subprocess.run([sys.executable, "-m", "pip", "install", "-q",
+                "opencv-python-headless"], check=False)
+# (numpy, scipy, pandas, matplotlib, seaborn ARE preinstalled)
+
 import os
 import cv2
 import numpy as np
@@ -48,8 +54,8 @@ from scipy import signal as scipy_signal
 from dataclasses import dataclass
 from pathlib import Path
 
-# All required packages are preinstalled on Google Colab:
-#   opencv-python-headless, numpy, scipy, pandas, matplotlib, seaborn
+# Packages: opencv-python-headless is pip-installed in CELL 1;
+#   numpy, scipy, pandas, matplotlib, seaborn are preinstalled on Colab.
 
 FACE_CASCADE_PATH = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
 
