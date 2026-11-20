@@ -38,14 +38,29 @@ HOW TO USE:
 """
 
 # %% ==================== CELL 1: INSTALLS + IMPORTS ====================
-# OpenCV is NOT preinstalled on current Colab runtimes - install it first.
+# OpenCV conflicts are common on Colab: several opencv-* packages can be
+# present and an old/stub cv2 may shadow the real one. Fix = uninstall
+# ALL variants, install headless fresh, then VERIFY the attribute exists.
 import subprocess, sys
-subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-                "opencv-python-headless"], check=False)
-# (numpy, scipy, pandas, matplotlib, seaborn ARE preinstalled)
+
+def _pip(*args):
+    subprocess.run([sys.executable, "-m", "pip", *args], check=False)
+
+for pkg in ["opencv-python", "opencv-python-headless",
+            "opencv-contrib-python", "opencv-contrib-python-headless"]:
+    _pip("uninstall", "-y", pkg)
+_pip("install", "-q", "opencv-python-headless")
 
 import os
 import cv2
+
+print("cv2 version:", cv2.__version__)
+print("cv2 file   :", cv2.__file__)
+print("has CascadeClassifier:", hasattr(cv2, "CascadeClassifier"))
+if not hasattr(cv2, "CascadeClassifier"):
+    raise RuntimeError(
+        "OpenCV installed but CascadeClassifier missing - "
+        "try Runtime -> Restart session, then Run all again.")
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
