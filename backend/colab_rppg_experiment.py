@@ -192,7 +192,7 @@ def _load_detector():
     if _yunet is None:
         fdyn = getattr(cv2, "FaceDetectorYN", None) or getattr(
             getattr(cv2, "objdetect", None), "FaceDetectorYN", None)
-        _yunet = fdyn.create(YUNET_PATH, "", (320, 320), 0.6, 0.3, 5000)
+        _yunet = fdyn.create(YUNET_PATH, "", (320, 320), 0.5, 0.3, 5000)
     return _yunet
 
 
@@ -207,7 +207,9 @@ def _detect_faces(detector, img_bgr):
             img_bgr, scaleFactor=1.15, minNeighbors=5, minSize=(80, 80))
         return [tuple(int(v) for v in f) for f in faces]
     detector.setInputSize((img_bgr.shape[1], img_bgr.shape[0]))
-    _, faces = detector.detect(img_bgr)
+    res = detector.detect(img_bgr)
+    # detect() returns (retval, faces) in some builds, faces-only in others
+    faces = res[1] if isinstance(res, tuple) else res
     if faces is None:
         return []
     return [(int(f[0]), int(f[1]), int(f[2]), int(f[3]))
@@ -361,9 +363,13 @@ def analyse_video_with_details(path):
     finally:
         capture.release()
 
+    print(f"[debug] fps={fps:.1f} processed_frames={processed} "
+          f"detection_attempts={detection_attempts} face_hits={face_hits} "
+          f"green_samples={len(greens)} face_ratio={face_hits / max(detection_attempts, 1):.2f}")
     if not greens:
         raise RppgError("no_face", "No face detected.")
     duration = len(greens) / fps
+    print(f"[debug] usable_duration={duration:.2f}s (min {MIN_DURATION_SECONDS}s)")
     if duration < MIN_DURATION_SECONDS:
         raise RppgError("too_short", "Video too short.")
     if fps < MIN_FPS:
