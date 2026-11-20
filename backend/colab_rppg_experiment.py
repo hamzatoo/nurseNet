@@ -38,9 +38,9 @@ HOW TO USE:
 """
 
 # %% ==================== CELL 1: INSTALLS + IMPORTS ====================
-# OpenCV conflicts are common on Colab: several opencv-* packages can be
-# present and an old/stub cv2 may shadow the real one. Fix = uninstall
-# ALL variants, install headless fresh, then VERIFY the attribute exists.
+# OpenCV 5.x removed cv2.CascadeClassifier (Haar cascade API changed),
+# so we pin opencv-python-headless<5 to keep the production pipeline
+# byte-identical. Also uninstall conflicting variants first.
 import subprocess, sys
 
 def _pip(*args):
@@ -49,7 +49,7 @@ def _pip(*args):
 for pkg in ["opencv-python", "opencv-python-headless",
             "opencv-contrib-python", "opencv-contrib-python-headless"]:
     _pip("uninstall", "-y", pkg)
-_pip("install", "-q", "opencv-python-headless")
+_pip("install", "-q", "opencv-python-headless<5")  # v5 removed CascadeClassifier
 
 import os
 import cv2
