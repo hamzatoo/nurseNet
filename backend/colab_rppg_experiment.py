@@ -73,11 +73,30 @@ import cv2
 
 print("cv2 version:", cv2.__version__)
 print("cv2 file   :", cv2.__file__)
-print("has CascadeClassifier:", hasattr(cv2, "CascadeClassifier"))
-if not hasattr(cv2, "CascadeClassifier"):
-    raise RuntimeError(
-        "OpenCV 4.x did not load correctly. Do: "
-        "Runtime -> Restart session, then Run all again.")
+HAS_CASCADE = hasattr(cv2, "CascadeClassifier")
+print("has CascadeClassifier:", HAS_CASCADE)
+
+# Face detector selection:
+#   cv2 < 5  -> classic Haar CascadeClassifier (same as production rppg.py)
+#   cv2 >= 5 -> YuNet DNN detector (CascadeClassifier was removed in v5)
+# Both return the same (x, y, w, h) boxes, so the rPPG logic is identical.
+DET_MODE = "cascade" if HAS_CASCADE else "yunet"
+YUNET_PATH = "face_detection_yunet_2023mar.onnx"
+_yunet = None
+if DET_MODE == "yunet":
+    import urllib.request
+    if not os.path.exists(YUNET_PATH):
+        urllib.request.urlretrieve(
+            "https://github.com/opencv/opencv_zoo/raw/main/models/"
+            "face_detection_yunet/face_detection_yunet_2023mar.onnx",
+            YUNET_PATH)
+    _FDYN = getattr(cv2, "FaceDetectorYN", None) or getattr(
+        getattr(cv2, "objdetect", None), "FaceDetectorYN", None)
+    if _FDYN is None:
+        raise RuntimeError("FaceDetectorYN not found in this cv2 build")
+    print("Using YuNet face detector (cv2", cv2.__version__, ")")
+else:
+    print("Using Haar CascadeClassifier (cv2", cv2.__version__, ")")
 
 import numpy as np
 import pandas as pd
@@ -161,11 +180,38 @@ cap_test.release()
 # constants, same math => identical results to production.
 
 def _load_detector():
-    detector = cv2.CascadeClassifier(str(FACE_CASCADE_PATH))
-    if detector.empty():
-        raise RppgError("detector_unavailable",
-                        "Face detector failed to load.")
-    return detector
+    """Return the face detector for the active DET_MODE."""
+    global _yunet
+    if DET_MODE == "cascade":
+        detector = cv2.CascadeClassifier(str(FACE_CASCADE_PATH))
+        if detector.empty():
+            raise RppgError("detector_unavailable",
+                            "Face detector failed to load.")
+        return detector
+    # YuNet: create once, input size is set per-frame in _detect_faces
+    if _yunet is None:
+        fdyn = getattr(cv2, "FaceDetectorYN", None) or getattr(
+            getattr(cv2, "objdetect", None), "FaceDetectorYN", None)
+        _yunet = fdyn.create(YUNET_PATH, "", (320, 320), 0.6, 0.3, 5000)
+    return _yunet
+
+
+def _detect_faces(detector, img_bgr):
+    """Unified face detection -> list of (x, y, w, h) tuples.
+
+    cascade mode: img is equalized grayscale (detectMultiScale).
+    yunet mode  : img is the BGR frame; returns Nx15 matrix, cols 0-3 = xywh.
+    """
+    if DET_MODE == "cascade":
+        faces = detector.detectMultiScale(
+            img_bgr, scaleFactor=1.15, minNeighbors=5, minSize=(80, 80))
+        return [tuple(int(v) for v in f) for f in faces]
+    detector.setInputSize((img_bgr.shape[1], img_bgr.shape[0]))
+    _, faces = detector.detect(img_bgr)
+    if faces is None:
+        return []
+    return [(int(f[0]), int(f[1]), int(f[2]), int(f[3]))
+            for f in faces]
 
 
 def _forehead_roi(face):
@@ -270,9 +316,9 @@ def _extract_trace(capture, detector):
 
         if processed % DETECTION_INTERVAL == 0 or box is None:
             detection_attempts += 1
-            faces = detector.detectMultiScale(
-                cv2.equalizeHist(gray),
-                scaleFactor=1.15, minNeighbors=5, minSize=(80, 80))
+            det_img = (cv2.equalizeHist(gray) if DET_MODE == "cascade"
+                       else frame)
+            faces = _detect_faces(detector, det_img)
             if len(faces) > 0:
                 box = max(faces, key=lambda f: int(f[2]) * int(f[3]))
                 last_hit_frame = processed
@@ -417,9 +463,9 @@ if D is not None:
     if ok:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         det = _load_detector()
-        faces = det.detectMultiScale(cv2.equalizeHist(gray),
-                                     scaleFactor=1.15, minNeighbors=5,
-                                     minSize=(80, 80))
+        det_img = (cv2.equalizeHist(gray) if DET_MODE == "cascade"
+                   else cv2.cvtColor(vis, cv2.COLOR_RGB2BGR))
+        faces = _detect_faces(det, det_img)
         vis = frame.copy()
         if len(faces):
             box = max(faces, key=lambda f: int(f[2]) * int(f[3]))
