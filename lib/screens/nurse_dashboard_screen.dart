@@ -9,6 +9,7 @@ import '../services/firestore_service.dart';
 import '../models/care_request.dart';
 import '../models/user_model.dart';
 import 'nurse_approval_waiting_screen.dart';
+import '../models/heart_rate_reading.dart';
 
 class NurseDashboardScreen extends StatefulWidget {
   const NurseDashboardScreen({super.key});
@@ -655,6 +656,7 @@ class _NurseDashboardScreenState extends State<NurseDashboardScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    _buildPatientVitals(request.patientId),
                     const SizedBox(height: 4),
                     Row(
                       children: [
@@ -1398,4 +1400,42 @@ class _NurseDashboardScreenState extends State<NurseDashboardScreen> {
       }
     }
   }
+
+  /// Latest heart-rate reading of a patient (users/{patientId}/vitals).
+  /// Shown inside the request card so the nurse sees it before accepting.
+  Widget _buildPatientVitals(String patientId) {
+    return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      future: FirebaseFirestore.instance
+          .collection('users')
+          .doc(patientId)
+          .collection('vitals')
+          .orderBy('measuredAt', descending: true)
+          .limit(1)
+          .get(),
+      builder: (context, snap) {
+        if (!snap.hasData || snap.data!.docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final r = HeartRateReading.fromFirestore(snap.data!.docs.first);
+        final d = r.measuredAt;
+        final ds = '${d.year}/${d.month.toString().padLeft(2, '0')}/'
+            '${d.day.toString().padLeft(2, '0')}';
+        return Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(
+            children: [
+              const Icon(Icons.favorite_rounded,
+                  color: Color(0xFFEF4444), size: 15),
+              const SizedBox(width: 5),
+              Text(
+                'آخر نبض: ${r.bpm} bpm ($ds)',
+                style: TextStyle(fontSize: 11.5, color: Colors.grey[700]),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
 }
