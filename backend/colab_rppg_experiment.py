@@ -110,7 +110,7 @@ from pathlib import Path
 FACE_CASCADE_PATH = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
 
 # ---- Constants: IDENTICAL to backend/app/core/rppg.py ----
-MIN_DURATION_SECONDS = 5.0
+MIN_DURATION_SECONDS = 4.0   # Colab experiment only - production uses 5.0
 MIN_FPS = 10.0
 MIN_FACE_RATIO = 0.5
 MIN_BRIGHTNESS = 40.0
