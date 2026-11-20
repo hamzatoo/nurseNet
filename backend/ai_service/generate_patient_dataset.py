@@ -72,7 +72,7 @@ CATEGORY_TO_SPECIALTY = {
 # All classes the model can output (all exist in providers dataset)
 ALL_SPECIALTIES = [
     "قلبية", "عصبية", "تنفسية", "كلوية", "عظمية", "عينية", "أورام", "طوارئ",
-    "تمريض منزلي", "رعاية مسنين", "داخلية", "نسائية", "أطفال",
+    "تمريض منزلي", "رعاية مسنين", "داخلية", "أطفال",
 ]
 
 # Realistic Arabic symptom/diagnosis phrases per specialty — these feed
@@ -136,11 +136,6 @@ SYMPTOM_POOLS = {
         "أنيميا مزمنة مع إرهاق", "أمراض مزمنة متعددة تحتاج متابعة",
         "قرحة معدة متكررة والتهاب البنكرياس",
     ],
-    "نسائية": [
-        "حمل عالي الخطورة مع سكري", "نزيف رحمي غير منتظم",
-        "أورام ليفية في الرحم", "تعثر متكرر في الحمل",
-        "حبوب لاصقة ودعم بعد ولادة", "متابعة ما قبل الولادة",
-    ],
     "أطفال": [
         "رضيع خديج في الحضانة المنزلية", "ربو عند الطفل مع نوبات",
         "حالات صرع عند الأطفال", "تغذية صناعية وخدج",
@@ -165,8 +160,6 @@ def age_for_specialty(spec):
         return random.choice([random.randint(40, 60), random.randint(60, 85)])
     if spec == "أطفال":
         return random.randint(0, 12)
-    if spec == "نسائية":
-        return random.randint(18, 45)
     if spec == "طوارئ":
         return random.randint(18, 70)
     return random.randint(30, 78)
