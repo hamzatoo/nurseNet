@@ -73,8 +73,11 @@ service cloud.firestore {
     // قراءات النبض المحفوظة من ميزة القياس بدون تلامس، تحت users/{auth.uid}/vitals.
     // المستخدم يقرأ ويضيف قراءاته فقط؛ لا يمكن تعديل قياس سابق أو حذف قياس غيره.
     match /users/{userId}/vitals/{readingId} {
-      allow read, create: if request.auth != null
-                          && request.auth.uid == userId;
+      // المريض يقرأ ويضيف قراءاته؛ أي مستخدم مصادق (مثل الممرض المعالج)
+      // يقدر يقرأها لعرضها في ملف المريض. التعديل يبقى ممنوعاً.
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.auth.uid == userId;
       allow delete: if request.auth != null && request.auth.uid == userId;
       allow update: if false;
     }

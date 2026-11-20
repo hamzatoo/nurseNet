@@ -559,7 +559,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         gradient: const LinearGradient(
-          colors: [Color(0xFF12305C), Color(0xFF1A73E8)],
+          colors: [AppColors.primary, AppColors.accent],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),

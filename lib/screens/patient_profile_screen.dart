@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../theme.dart';
 import '../services/app_data_service.dart';
 import '../models/user_model.dart';
+import '../models/heart_rate_reading.dart';
 
 class PatientProfileScreen extends StatefulWidget {
   const PatientProfileScreen({super.key});
@@ -257,6 +258,8 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                             const SizedBox(height: 24),
                             _buildMedicalInfoSection(),
                             const SizedBox(height: 24),
+                            _buildHeartRateHistory(),
+                            const SizedBox(height: 24),
                             _buildLogoutButton(),
                             const SizedBox(height: 24),
                             if (_isEditing) _buildSaveButton(),
@@ -481,6 +484,87 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
               ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+
+
+  /// Last 3 contactless heart-rate readings from users/{uid}/vitals.
+  Widget _buildHeartRateHistory() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('آخر قياسات النبض'),
+        const SizedBox(height: 12),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('vitals')
+              .orderBy('measuredAt', descending: true)
+              .limit(3)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Text('تعذر تحميل القياسات',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]));
+            }
+            if (!snapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final docs = snapshot.data!.docs;
+            if (docs.isEmpty) {
+              return Text('لا توجد قياسات بعد — جرّب قياس النبض بدون تلامس',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]));
+            }
+            return Column(
+              children: docs.map((doc) {
+                final r = HeartRateReading.fromFirestore(doc);
+                final d = r.measuredAt;
+                final dateStr =
+                    '${d.year}/${d.month.toString().padLeft(2, '0')}/'
+                    '${d.day.toString().padLeft(2, '0')}  '
+                    '${d.hour.toString().padLeft(2, '0')}:'
+                    '${d.minute.toString().padLeft(2, '0')}';
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.18)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.favorite_rounded,
+                          color: Color(0xFFEF4444), size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '${r.bpm} نبضة/دقيقة — ${r.categoryLabel}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 13.5),
+                        ),
+                      ),
+                      Text(dateStr,
+                          style: TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.grey[600])),
+                    ],
+                  ),
+                );
+              }).toList(),
+            );
+          },
         ),
       ],
     );
