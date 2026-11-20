@@ -348,7 +348,8 @@ def _extract_trace(capture, detector):
         processed += 1
 
     return (fps, greens, motions,
-            face_hits / max(detection_attempts, 1), processed)
+            face_hits / max(detection_attempts, 1), processed,
+            detection_attempts, face_hits)
 
 
 def analyse_video_with_details(path):
@@ -359,13 +360,14 @@ def analyse_video_with_details(path):
         raise RppgError("unreadable_video", "Cannot open video file.")
     capture.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)
     try:
-        fps, greens, motions, face_ratio, frames = _extract_trace(capture, detector)
+        (fps, greens, motions, face_ratio, frames,
+         det_attempts, face_hits_n) = _extract_trace(capture, detector)
     finally:
         capture.release()
 
-    print(f"[debug] fps={fps:.1f} processed_frames={processed} "
-          f"detection_attempts={detection_attempts} face_hits={face_hits} "
-          f"green_samples={len(greens)} face_ratio={face_hits / max(detection_attempts, 1):.2f}")
+    print(f"[debug] fps={fps:.1f} processed_frames={frames} "
+          f"detection_attempts={det_attempts} face_hits={face_hits_n} "
+          f"green_samples={len(greens)} face_ratio={face_ratio:.2f}")
     if not greens:
         raise RppgError("no_face", "No face detected.")
     duration = len(greens) / fps
