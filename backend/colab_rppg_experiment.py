@@ -38,18 +38,35 @@ HOW TO USE:
 """
 
 # %% ==================== CELL 1: INSTALLS + IMPORTS ====================
-# OpenCV 5.x removed cv2.CascadeClassifier (Haar cascade API changed),
-# so we pin opencv-python-headless<5 to keep the production pipeline
-# byte-identical. Also uninstall conflicting variants first.
-import subprocess, sys
+# OpenCV 5.x removed cv2.CascadeClassifier. We pin opencv 4.x and make
+# sure a STALE cv2 (already imported earlier in this session) cannot
+# shadow the fresh install: purge sys.modules + importlib caches first.
+import subprocess, sys, importlib
 
 def _pip(*args):
-    subprocess.run([sys.executable, "-m", "pip", *args], check=False)
+    r = subprocess.run([sys.executable, "-m", "pip", *args],
+                       capture_output=True, text=True)
+    print("$ pip", " ".join(args))
+    print((r.stdout or "")[-400:] + (r.stderr or "")[-400:])
+    return r.returncode
 
+# 1) remove every opencv variant that could conflict
 for pkg in ["opencv-python", "opencv-python-headless",
             "opencv-contrib-python", "opencv-contrib-python-headless"]:
     _pip("uninstall", "-y", pkg)
-_pip("install", "-q", "opencv-python-headless<5")  # v5 removed CascadeClassifier
+
+# 2) force a clean install of the LAST 4.x (has CascadeClassifier)
+_pip("install", "--force-reinstall", "--no-cache-dir",
+     "opencv-python-headless<5")
+
+# 3) purge any previously-imported cv2 so `import cv2` reloads from disk
+for m in [m for m in list(sys.modules)
+          if m == "cv2" or m.startswith("cv2.")]:
+    del sys.modules[m]
+try:
+    importlib.invalidate_caches()
+except Exception:
+    pass
 
 import os
 import cv2
@@ -59,8 +76,9 @@ print("cv2 file   :", cv2.__file__)
 print("has CascadeClassifier:", hasattr(cv2, "CascadeClassifier"))
 if not hasattr(cv2, "CascadeClassifier"):
     raise RuntimeError(
-        "OpenCV installed but CascadeClassifier missing - "
-        "try Runtime -> Restart session, then Run all again.")
+        "OpenCV 4.x did not load correctly. Do: "
+        "Runtime -> Restart session, then Run all again.")
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -68,9 +86,7 @@ import seaborn as sns
 from scipy import signal as scipy_signal
 from dataclasses import dataclass
 from pathlib import Path
-
-# Packages: opencv-python-headless is pip-installed in CELL 1;
-#   numpy, scipy, pandas, matplotlib, seaborn are preinstalled on Colab.
+# (numpy, scipy, pandas, matplotlib, seaborn are preinstalled on Colab)
 
 FACE_CASCADE_PATH = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
 
