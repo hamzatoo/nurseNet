@@ -50,7 +50,11 @@ class _SplashViewState extends State<SplashView> {
         print('🔄 Fetching user data from Firestore...');
 
         // جلب بيانات المستخدم من Firestore
+        // المرضى مخزّنون في patients collection وليس users
         DocumentSnapshot userDoc = await _firestore.collection('users').doc(user.uid).get();
+        if (!userDoc.exists) {
+          userDoc = await _firestore.collection('patients').doc(user.uid).get();
+        }
 
         if (userDoc.exists) {
           final data = userDoc.data() as Map<String, dynamic>;
