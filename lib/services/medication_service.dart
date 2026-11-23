@@ -73,6 +73,7 @@ class MedicationService {
     await _medicationsCollection.doc(medicationId).update({
       'status': 'taken',
       'lastTakenAt': FieldValue.serverTimestamp(),
+      'statusUpdatedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -80,6 +81,7 @@ class MedicationService {
   Future<void> markAsSkipped(String medicationId) async {
     await _medicationsCollection.doc(medicationId).update({
       'status': 'skipped',
+      'statusUpdatedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -120,17 +122,34 @@ class MedicationService {
     });
   }
 
-  // Reset daily status for medications (call at midnight)
+  // Reset daily dose marks: any medication whose status was last changed
+  // BEFORE today goes back to pending so the new day's doses appear.
+  // Marks made today are preserved. Safe to call on every screen open.
   Future<void> resetDailyStatus() async {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
 
-    final endOfDay = startOfDay.add(const Duration(days: 1));
     final snapshot = await _medicationsCollection.get();
-
     for (final doc in snapshot.docs) {
-      final medication = Medication.fromFirestore(doc);
-      if (_isScheduledDuring(medication, startOfDay, endOfDay)) {
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data == null) continue;
+      final status = data['status'] as String? ?? 'pending';
+      if (status == 'pending') continue;
+
+      // Latest known activity timestamp for this medication's status.
+      DateTime? activity;
+      for (final key in ['statusUpdatedAt', 'lastTakenAt']) {
+        final ts = data[key];
+        if (ts is Timestamp) {
+          final dt = ts.toDate();
+          if (activity == null || dt.isAfter(activity)) activity = dt;
+        }
+      }
+
+      // No timestamp -> legacy doc, treat as stale. Timestamp before today
+      // -> yesterday's (or older) mark, reset for the new day.
+      final stale = activity == null || activity.isBefore(startOfDay);
+      if (stale) {
         await doc.reference.update({'status': 'pending'});
       }
     }

@@ -32,6 +32,9 @@ class _MedicalKitScreenState extends State<MedicalKitScreen> {
   @override
   void initState() {
     super.initState();
+    // Roll yesterday's dose marks back to pending so today's doses show.
+    // Fire-and-forget: the Firestore stream refreshes the UI automatically.
+    _medicationService.resetDailyStatus();
     _medicationsStream = _medicationService.getTodayMedications();
     // Keeps the "now" marker and the remaining-time labels honest.
     _clock = Timer.periodic(const Duration(seconds: 30), (_) {
