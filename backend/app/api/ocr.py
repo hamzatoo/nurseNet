@@ -721,11 +721,17 @@ def _calculate_scheduled_times(frequency: str) -> list:
 
 
 @router.post("/ocr-prescription")
-async def ocr_prescription(image: UploadFile = File(...)):
+async def ocr_prescription(
+    image: UploadFile = File(...),
+    engine: Optional[str] = None,
+):
     """
     Extract medication information from a prescription image.
 
     Accepts: multipart/form-data with 'image' field
+    Optional query param `engine`: "gemini" | "tesseract" | unset (auto).
+    Used by the evaluation harness for A/B comparison; production clients
+    leave it unset and get the automatic Gemini->Tesseract fallback.
     Returns: structured JSON with medications, duration, and confidence
     """
     if not _content_type_allowed(image):
@@ -777,8 +783,26 @@ async def ocr_prescription(image: UploadFile = File(...)):
         confidence = 0.0
         cleaned_text = ""
 
+        engine_param = (engine or "").lower().strip()
+
         # PRIMARY PATH: Gemini Vision - built for handwriting + mixed AR/EN.
-        gemini_result = _run_gemini(temporary_path, warnings)
+        # Skipped entirely when engine=tesseract is requested (A/B testing).
+        gemini_result = None
+        if engine_param != "tesseract":
+            gemini_result = _run_gemini(temporary_path, warnings)
+
+        if engine_param == "gemini" and (
+            gemini_result is None or not gemini_result["medications"]
+        ):
+            # Forced-Gemini mode (evaluation): report failure instead of
+            # silently falling back so metrics stay pure.
+            return _error(
+                "gemini_no_result",
+                "Gemini لم يتعرّف على أدوية في الصورة.",
+                "حسّن جودة الصورة أو جرّب محركاً آخر.",
+                status_code=422,
+            )
+
         if gemini_result and gemini_result["medications"]:
             engine = "gemini"
             medications = gemini_result["medications"]
