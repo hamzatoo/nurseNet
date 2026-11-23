@@ -244,14 +244,13 @@ class TestDuration:
 class TestGeminiAvailability:
     def test_no_key_returns_none(self, monkeypatch):
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        # force cache reset
-        ocr._gemini_model_cache = None
-        assert ocr._gemini_model() is None
+        ocr._genai_configured = False
+        assert ocr._gemini_genai() is None
         assert ocr._run_gemini("nonexistent.jpg", []) is None
 
     def test_run_gemini_never_raises_on_bad_path(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-test")
-        ocr._gemini_model_cache = None
+        ocr._genai_configured = False
         warnings = []
         # whatever happens (no package / bad key / missing file) -> None, no raise
         result = ocr._run_gemini("/path/that/does/not/exist.jpg", warnings)

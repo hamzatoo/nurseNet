@@ -334,8 +334,16 @@ def _extract_text_from_image(image_path: str) -> str:
 # ---------------------------------------------------------------------------
 # GEMINI_API_KEY is read from the environment only - never hardcode it.
 # The key format is owned by Google; do NOT validate its prefix or length.
-_GEMINI_MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
-_gemini_model_cache = None
+# Model names get retired over time - try the env override first, then a
+# list of current candidates until one answers.
+_GEMINI_MODEL_CANDIDATES = [
+    os.environ.get("GEMINI_MODEL"),
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+]
+_GEMINI_MODEL_CANDIDATES = [m for m in _GEMINI_MODEL_CANDIDATES if m]
+_genai_configured = False
 
 _GEMINI_PROMPT = """You are a medical prescription reader. The image shows a doctor's
 prescription, usually HANDWRITTEN, often mixing English/Latin drug names with
@@ -367,15 +375,19 @@ Rules:
 """
 
 
-def _gemini_model():
-    """Return a configured Gemini model, or None when unavailable.
+def _gemini_genai():
+    """Return the configured google.generativeai module, or None.
 
     Returns None (silent fallback to Tesseract) when the API key or the
     google-generativeai package is missing.
     """
-    global _gemini_model_cache
-    if _gemini_model_cache is not None:
-        return _gemini_model_cache
+    global _genai_configured
+    if _genai_configured:
+        try:
+            import google.generativeai as genai
+            return genai
+        except ImportError:
+            return None
 
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
@@ -387,8 +399,8 @@ def _gemini_model():
 
     try:
         genai.configure(api_key=api_key)
-        _gemini_model_cache = genai.GenerativeModel(_GEMINI_MODEL_NAME)
-        return _gemini_model_cache
+        _genai_configured = True
+        return genai
     except Exception:
         return None
 
@@ -474,8 +486,8 @@ def _run_gemini(image_path: str, warnings: list):
     or None on ANY failure so the caller can fall back to Tesseract.
     Never raises - all exceptions are converted into warnings.
     """
-    model = _gemini_model()
-    if model is None:
+    genai = _gemini_genai()
+    if genai is None:
         if os.environ.get("GEMINI_API_KEY"):
             warnings.append("gemini_unavailable: package or init failed")
         return None
@@ -488,12 +500,27 @@ def _run_gemini(image_path: str, warnings: list):
         warnings.append(f"gemini_image_error: {type(exc).__name__}")
         return None
 
-    try:
-        response = model.generate_content([_GEMINI_PROMPT, img])
-        text = (response.text or "").strip()
-    except Exception as exc:
-        # Covers network failures, 429 rate limits, 5xx, safety blocks, etc.
-        warnings.append(f"gemini_request_failed: {type(exc).__name__}")
+    text = ""
+    last_error = "unknown"
+    for model_name in _GEMINI_MODEL_CANDIDATES:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content([_GEMINI_PROMPT, img])
+            text = (response.text or "").strip()
+            if text:
+                break
+            last_error = "empty_response"
+        except Exception as exc:
+            # Covers 404 (retired model), network failures, 429 rate limits,
+            # 5xx, safety blocks, etc. - try the next candidate model.
+            last_error = f"{model_name}:{type(exc).__name__}"
+            continue
+    else:
+        warnings.append(f"gemini_request_failed: {last_error}")
+        return None
+
+    if not text:
+        warnings.append(f"gemini_request_failed: {last_error}")
         return None
 
     payload = _extract_json_object(text)
@@ -828,11 +855,16 @@ async def ocr_prescription(
                         "notes": gemini_result["notes"],
                         "detail": "لم يتم العثور على أدوية مقروءة في الصورة",
                     }
-                return _error(
-                    "no_text_detected",
-                    "لم يتم العثور على نص في الصورة.",
-                    "تأكد من وضوح الصورة وحاول مرة أخرى.",
+                return JSONResponse(
                     status_code=422,
+                    content={
+                        "status": "error",
+                        "code": "no_text_detected",
+                        "detail": "لم يتم العثور على نص في الصورة.",
+                        "suggestion": "تأكد من وضوح الصورة وحاول مرة أخرى.",
+                        "engine_attempted": engine,
+                        "warnings": warnings,
+                    },
                 )
 
             # Clean and filter the text
