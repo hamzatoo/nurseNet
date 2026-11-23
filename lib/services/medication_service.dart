@@ -77,6 +77,28 @@ class MedicationService {
     });
   }
 
+  // Mark a single scheduled dose as taken (per-time tracking).
+  // doses -> { 'YYYY-MM-DD': { 'HH:mm'|'prn': { status, takenAt } } }
+  Future<void> markDoseTaken(
+      String medicationId, DateTime date, String timeKey) async {
+    final dayKey = Medication.doseDateKey(date);
+    await _medicationsCollection.doc(medicationId).update({
+      'doses.$dayKey.$timeKey.status': 'taken',
+      'doses.$dayKey.$timeKey.takenAt': FieldValue.serverTimestamp(),
+      'doses.$dayKey.$timeKey.statusUpdatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // Mark a single scheduled dose as skipped.
+  Future<void> markDoseSkipped(
+      String medicationId, DateTime date, String timeKey) async {
+    final dayKey = Medication.doseDateKey(date);
+    await _medicationsCollection.doc(medicationId).update({
+      'doses.$dayKey.$timeKey.status': 'skipped',
+      'doses.$dayKey.$timeKey.statusUpdatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   // Mark medication as skipped
   Future<void> markAsSkipped(String medicationId) async {
     await _medicationsCollection.doc(medicationId).update({

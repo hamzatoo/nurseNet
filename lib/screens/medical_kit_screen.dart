@@ -697,8 +697,10 @@ class _MedicalKitScreenState extends State<MedicalKitScreen> {
   Widget _buildDoseCard(_DoseSlot slot, _DoseState state) {
     final medication = slot.medication;
     final palette = _paletteFor(medication.type);
-    final actionable = medication.status == MedicationStatus.pending;
-    final busy = _busyMedicationId == medication.id;
+    final actionable =
+        state != _DoseState.taken && state != _DoseState.skipped;
+    final busyKey = '${medication.id}|${slot.timeKey}';
+    final busy = _busyMedicationId == busyKey;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -796,10 +798,10 @@ class _MedicalKitScreenState extends State<MedicalKitScreen> {
               if (actionable)
                 _MarkTakenButton(
                   busy: busy,
-                  onPressed: busy ? null : () => _markAsTaken(medication),
+                  onPressed: busy ? null : () => _markDoseTaken(slot),
                 )
               else
-                _takenCaption(medication, state),
+                _takenCaption(slot, state),
             ],
           ),
         ],
@@ -807,9 +809,11 @@ class _MedicalKitScreenState extends State<MedicalKitScreen> {
     );
   }
 
-  Widget _takenCaption(Medication medication, _DoseState state) {
+  Widget _takenCaption(_DoseSlot slot, _DoseState state) {
     if (state != _DoseState.taken) return const SizedBox.shrink();
-    final takenAt = medication.lastTakenAt;
+    final medication = slot.medication;
+    final takenAt = medication.doseTakenAtOn(_now, slot.timeKey) ??
+        medication.lastTakenAt;
     if (takenAt == null || takenAt.day != _now.day) {
       return const SizedBox.shrink();
     }
@@ -838,11 +842,11 @@ class _MedicalKitScreenState extends State<MedicalKitScreen> {
         final at = _timeForToday(time);
         if (at == null) continue;
         scheduled = true;
-        timed.add(_DoseSlot(medication: medication, at: at));
+        timed.add(_DoseSlot(medication: medication, at: at, timeKey: time));
       }
       // As-needed doses (or unparsable times) still deserve a place on the rail.
       if (!scheduled) {
-        flexible.add(_DoseSlot(medication: medication, at: null));
+        flexible.add(_DoseSlot(medication: medication, at: null, timeKey: 'prn'));
       }
     }
 
@@ -861,6 +865,18 @@ class _MedicalKitScreenState extends State<MedicalKitScreen> {
   }
 
   _DoseState _stateForDose(_DoseSlot slot) {
+    // Per-dose record for today wins; fall back to the legacy status field.
+    final recorded = slot.medication.doseStatusOn(_now, slot.timeKey);
+    if (recorded != null) {
+      switch (recorded) {
+        case 'taken':
+          return _DoseState.taken;
+        case 'skipped':
+          return _DoseState.skipped;
+        case 'missed':
+          return _DoseState.missed;
+      }
+    }
     switch (slot.medication.status) {
       case MedicationStatus.taken:
         return _DoseState.taken;
@@ -992,11 +1008,14 @@ class _MedicalKitScreenState extends State<MedicalKitScreen> {
   // Actions
   // ---------------------------------------------------------------------------
 
-  Future<void> _markAsTaken(Medication medication) async {
+  Future<void> _markDoseTaken(_DoseSlot slot) async {
+    final medication = slot.medication;
+    final busyKey = '${medication.id}|${slot.timeKey}';
     if (_busyMedicationId != null) return;
-    setState(() => _busyMedicationId = medication.id);
+    setState(() => _busyMedicationId = busyKey);
     try {
-      await _medicationService.markAsTaken(medication.id);
+      await _medicationService.markDoseTaken(
+          medication.id, _now, slot.timeKey);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1219,12 +1238,19 @@ class _MedicalKitScreenState extends State<MedicalKitScreen> {
 enum _DoseState { taken, skipped, missed, pending, upcoming }
 
 class _DoseSlot {
-  const _DoseSlot({required this.medication, required this.at});
+  const _DoseSlot({
+    required this.medication,
+    required this.at,
+    required this.timeKey,
+  });
 
   final Medication medication;
 
   /// Scheduled time today, or `null` for an as-needed dose.
   final DateTime? at;
+
+  /// Firestore doses-map key: the raw scheduled time ("HH:mm") or 'prn'.
+  final String timeKey;
 }
 
 sealed class _TimelineItem {

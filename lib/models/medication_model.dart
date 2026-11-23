@@ -82,6 +82,8 @@ class Medication {
   final DateTime? createdAt;
   final String? imageUrl; // OCR image URL
   final bool isFromOCR;
+  /// Per-day, per-time-slot dose records: { 'YYYY-MM-DD': { 'HH:mm'|'prn': {status, takenAt} } }
+  final Map<String, dynamic> doses;
 
   Medication({
     required this.id,
@@ -98,6 +100,7 @@ class Medication {
     this.createdAt,
     this.imageUrl,
     this.isFromOCR = false,
+    this.doses = const {},
   });
 
   factory Medication.fromFirestore(DocumentSnapshot doc) {
@@ -121,6 +124,7 @@ class Medication {
           : null,
       imageUrl: data['imageUrl'] as String?,
       isFromOCR: data['isFromOCR'] as bool? ?? false,
+      doses: _parseDoses(data['doses']),
     );
   }
 
@@ -139,6 +143,7 @@ class Medication {
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : Timestamp.fromDate(DateTime.now()),
       'imageUrl': imageUrl,
       'isFromOCR': isFromOCR,
+      'doses': doses,
     };
   }
 
@@ -157,6 +162,7 @@ class Medication {
     DateTime? createdAt,
     String? imageUrl,
     bool? isFromOCR,
+    Map<String, dynamic>? doses,
   }) {
     return Medication(
       id: id ?? this.id,
@@ -173,7 +179,39 @@ class Medication {
       createdAt: createdAt ?? this.createdAt,
       imageUrl: imageUrl ?? this.imageUrl,
       isFromOCR: isFromOCR ?? this.isFromOCR,
+      doses: doses ?? this.doses,
     );
+  }
+
+
+  static Map<String, dynamic> _parseDoses(dynamic raw) {
+    if (raw is! Map) return {};
+    return raw.map((k, v) => MapEntry(k.toString(), v));
+  }
+
+  /// Firestore key for a calendar day: "YYYY-MM-DD".
+  static String doseDateKey(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+
+  /// Recorded status for [timeKey] on [date], or null when no record exists.
+  String? doseStatusOn(DateTime date, String timeKey) {
+    final day = doses[doseDateKey(date)];
+    if (day is! Map) return null;
+    final rec = day[timeKey];
+    if (rec is! Map) return null;
+    return rec['status'] as String?;
+  }
+
+  /// When the dose was marked taken, if recorded.
+  DateTime? doseTakenAtOn(DateTime date, String timeKey) {
+    final day = doses[doseDateKey(date)];
+    if (day is! Map) return null;
+    final rec = day[timeKey];
+    if (rec is! Map) return null;
+    final ts = rec['takenAt'];
+    return ts is Timestamp ? ts.toDate() : null;
   }
 
   static MedicationType parseMedicationType(String? value) {
