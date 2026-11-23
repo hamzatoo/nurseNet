@@ -408,6 +408,21 @@ class AIService:
             tags_text = " ".join(str(t) for t in tags)
             full_text = self._normalize_arabic_text(f"{diagnosis} {tags_text} {category}")
 
+            # Guard: with no symptom text and a generic category the SVM can
+            # only guess from numeric features - return no specialty so nurse
+            # matching stays neutral instead of applying a bogus bonus.
+            meaningful_text = bool(diagnosis.strip()) or bool(tags_text.strip())
+            generic_category = str(
+                patient_data.get("medicalCategory") or "").strip() in (
+                "", "غير محدد", "أخرى", "اخرى", "Other", "other")
+            if not meaningful_text and generic_category:
+                return {
+                    "status": "success",
+                    "predicted_specialty": None,
+                    "confidence": 0.0,
+                    "note": "insufficient_symptom_text",
+                }
+
             # recover original (un-normalized) keys for the fixed mappings
             raw_location = str(patient_data.get("location") or "")
             raw_category = str(patient_data.get("medicalCategory") or "")
