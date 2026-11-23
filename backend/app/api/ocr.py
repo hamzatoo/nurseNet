@@ -329,6 +329,197 @@ def _extract_text_from_image(image_path: str) -> str:
     return "\n".join(text_parts)
 
 
+# ---------------------------------------------------------------------------
+# Gemini Vision - PRIMARY prescription reader (handwriting + mixed AR/EN)
+# ---------------------------------------------------------------------------
+# GEMINI_API_KEY is read from the environment only - never hardcode it.
+# The key format is owned by Google; do NOT validate its prefix or length.
+_GEMINI_MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+_gemini_model_cache = None
+
+_GEMINI_PROMPT = """You are a medical prescription reader. The image shows a doctor's
+prescription, usually HANDWRITTEN, often mixing English/Latin drug names with
+Arabic dosage and usage instructions. Extract EVERY medication you can read.
+
+Return ONLY a single valid JSON object - no markdown, no commentary:
+{
+  "medications": [
+    {
+      "medication_name": "drug name exactly as written (usually English/Latin)",
+      "type": "tablet|capsule|syrup|injection|drops|inhaler|cream|suppository|other",
+      "dosage": "e.g. 500mg, 5ml, one tablet - empty string if unreadable",
+      "frequency": "how often, as written e.g. مرتين يومياً / كل 8 ساعات",
+      "instructions": "Arabic usage notes e.g. بعد الطعام، لمدة أسبوع",
+      "unclear_or_notes": "illegible words or parts needing manual review, else empty"
+    }
+  ],
+  "duration_days": null,
+  "warnings": ["short notes about unreadable/blurry areas, else empty list"],
+  "notes": "one-line summary of what was read"
+}
+
+Rules:
+- Read drug names as Latin/English text even if handwritten.
+- Keep Arabic instruction text in Arabic.
+- If a part is unreadable, put it in unclear_or_notes - do NOT guess.
+- If NO medication is readable, return {"medications": [], "warnings": [...],
+  "notes": "reason"}.
+"""
+
+
+def _gemini_model():
+    """Return a configured Gemini model, or None when unavailable.
+
+    Returns None (silent fallback to Tesseract) when the API key or the
+    google-generativeai package is missing.
+    """
+    global _gemini_model_cache
+    if _gemini_model_cache is not None:
+        return _gemini_model_cache
+
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return None
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        return None
+
+    try:
+        genai.configure(api_key=api_key)
+        _gemini_model_cache = genai.GenerativeModel(_GEMINI_MODEL_NAME)
+        return _gemini_model_cache
+    except Exception:
+        return None
+
+
+def _extract_json_object(text: str):
+    """Pull the first JSON object out of a model response (fences tolerated)."""
+    if not text:
+        return None
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        import json
+        return json.loads(cleaned[start:end + 1])
+    except Exception:
+        return None
+
+
+def _map_gemini_frequency(text: str) -> str:
+    """Map free-text frequency (usually Arabic) to the app enum key."""
+    t = (text or "").lower()
+    for freq, patterns in FREQUENCY_PATTERNS:
+        for pattern in patterns:
+            if pattern.lower() in t:
+                return freq
+    return "once_daily"
+
+
+def _map_gemini_type(text: str) -> str:
+    """Map free-text type to the app type enum key."""
+    t = (text or "").lower()
+    for med_type, keywords in TYPE_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword.lower() in t:
+                return med_type
+    return "other"
+
+
+def _normalise_gemini_medications(raw_meds) -> list:
+    """Coerce Gemini output into the medication dict shape the API returns."""
+    meds = []
+    if not isinstance(raw_meds, list):
+        return meds
+    for item in raw_meds:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("medication_name") or item.get("name") or "").strip()
+        if not name:
+            continue
+        freq_text = str(item.get("frequency") or "")
+        frequency = _map_gemini_frequency(freq_text)
+        instructions = str(item.get("instructions") or "").strip()
+        # Keep the original frequency wording visible when it did not map.
+        if freq_text and frequency == "once_daily" and freq_text.lower() not in (
+            "once", "daily", "q.d", "qd", "صباحاً", "صباحا", "يومياً", "يوميا",
+            "مرة واحدة", "مرة يومياً", "مرة يوميا", "كل يوم",
+        ):
+            instructions = (instructions + " | التكرار: " + freq_text).strip(" |")
+        type_text = str(item.get("type") or "")
+        med = {
+            "name": name,
+            "medication_name": name,
+            "dosage": str(item.get("dosage") or "").strip(),
+            "type": _map_gemini_type(type_text) if type_text else "other",
+            "frequency": frequency,
+            "instructions": instructions,
+            "unclear_or_notes": str(item.get("unclear_or_notes") or "").strip(),
+            "scheduled_times": _calculate_scheduled_times(frequency),
+        }
+        meds.append(med)
+    return meds
+
+
+def _run_gemini(image_path: str, warnings: list):
+    """Primary OCR path: send the image to Gemini Vision.
+
+    Returns a dict {medications, duration_days, confidence, notes} on success,
+    or None on ANY failure so the caller can fall back to Tesseract.
+    Never raises - all exceptions are converted into warnings.
+    """
+    model = _gemini_model()
+    if model is None:
+        if os.environ.get("GEMINI_API_KEY"):
+            warnings.append("gemini_unavailable: package or init failed")
+        return None
+
+    try:
+        from PIL import Image
+        img = Image.open(image_path)
+        img.load()
+    except Exception as exc:
+        warnings.append(f"gemini_image_error: {type(exc).__name__}")
+        return None
+
+    try:
+        response = model.generate_content([_GEMINI_PROMPT, img])
+        text = (response.text or "").strip()
+    except Exception as exc:
+        # Covers network failures, 429 rate limits, 5xx, safety blocks, etc.
+        warnings.append(f"gemini_request_failed: {type(exc).__name__}")
+        return None
+
+    payload = _extract_json_object(text)
+    if payload is None:
+        warnings.append("gemini_invalid_json")
+        return None
+
+    meds = _normalise_gemini_medications(payload.get("medications"))
+    notes = str(payload.get("notes") or "")[:300]
+    for w in payload.get("warnings") or []:
+        warnings.append(str(w)[:200])
+
+    duration = payload.get("duration_days")
+    try:
+        duration = int(duration) if duration is not None else None
+    except (TypeError, ValueError):
+        duration = None
+
+    return {
+        "medications": meds,
+        "duration_days": duration,
+        "confidence": 0.9 if meds else 0.4,
+        "notes": notes,
+    }
+
+
 def _is_noise_line(line: str) -> bool:
     """Check if a line should be ignored (noise filtering)."""
     line_stripped = line.strip()
@@ -578,43 +769,77 @@ async def ocr_prescription(image: UploadFile = File(...)):
                 status_code=415,
             )
 
-        # Extract text from image (with preprocessing)
-        extracted_text = _extract_text_from_image(temporary_path)
+        warnings = []
+        engine = None
+        notes = ""
+        medications = []
+        duration_days = None
+        confidence = 0.0
+        cleaned_text = ""
 
-        if not extracted_text.strip():
-            return _error(
-                "no_text_detected",
-                "لم يتم العثور على نص في الصورة.",
-                "تأكد من وضوح الصورة وحاول مرة أخرى.",
-                status_code=422,
-            )
+        # PRIMARY PATH: Gemini Vision - built for handwriting + mixed AR/EN.
+        gemini_result = _run_gemini(temporary_path, warnings)
+        if gemini_result and gemini_result["medications"]:
+            engine = "gemini"
+            medications = gemini_result["medications"]
+            duration_days = gemini_result["duration_days"]
+            confidence = gemini_result["confidence"]
+            notes = gemini_result["notes"]
+        else:
+            # FALLBACK PATH: Tesseract OCR + pattern parser (printed text).
+            engine = "tesseract"
+            extracted_text = _extract_text_from_image(temporary_path)
 
-        # Clean and filter the text
-        cleaned_lines = [
-            line for line in extracted_text.split("\n")
-            if not _is_noise_line(line)
-        ]
-        cleaned_text = "\n".join(cleaned_lines)
+            if not extracted_text.strip():
+                if gemini_result is not None:
+                    # Gemini read the image but found no medication.
+                    return {
+                        "status": "success",
+                        "medications": [],
+                        "detected_duration": None,
+                        "confidence": 0.0,
+                        "raw_text": "",
+                        "engine": "gemini",
+                        "warnings": warnings,
+                        "notes": gemini_result["notes"],
+                        "detail": "لم يتم العثور على أدوية مقروءة في الصورة",
+                    }
+                return _error(
+                    "no_text_detected",
+                    "لم يتم العثور على نص في الصورة.",
+                    "تأكد من وضوح الصورة وحاول مرة أخرى.",
+                    status_code=422,
+                )
 
-        # Parse medications from cleaned text
-        medications = _parse_medications_from_text(cleaned_text)
+            # Clean and filter the text
+            cleaned_lines = [
+                line for line in extracted_text.split("\n")
+                if not _is_noise_line(line)
+            ]
+            cleaned_text = "\n".join(cleaned_lines)
 
-        # Extract duration
-        duration_days = _extract_duration(cleaned_text)
+            # Parse medications from cleaned text
+            medications = _parse_medications_from_text(cleaned_text)
 
-        # Calculate confidence based on text extraction quality
-        confidence = min(0.95, len(cleaned_text.split()) / 50.0) if cleaned_text else 0.0
+            # Extract duration
+            duration_days = _extract_duration(cleaned_text)
 
-        # Add scheduled times to each medication
-        for med in medications:
-            med["scheduled_times"] = _calculate_scheduled_times(med["frequency"])
+            # Calculate confidence based on text extraction quality
+            confidence = min(0.95, len(cleaned_text.split()) / 50.0) if cleaned_text else 0.0
+
+            # Add scheduled times to each medication
+            for med in medications:
+                med["scheduled_times"] = _calculate_scheduled_times(med["frequency"])
 
         return {
             "status": "success",
             "medications": medications,
             "detected_duration": duration_days,
             "confidence": round(confidence, 2),
-            "raw_text": cleaned_text[:500],  # First 500 chars for debugging
+            "raw_text": (notes or cleaned_text)[:500],
+            "engine": engine,
+            "warnings": warnings,
+            "notes": notes,
             "detail": f"تم استخراج {len(medications)} دواء من الوصفة",
         }
 

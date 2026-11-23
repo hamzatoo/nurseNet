@@ -14,5 +14,8 @@ scipy==1.16.3
 # OCR for prescription scanning (lightweight - uses system tesseract binary)
 pytesseract==0.3.10
 Pillow==10.1.0
+# Gemini Vision - primary prescription OCR (handwritten AR/EN mixed).
+# Reads GEMINI_API_KEY from the environment; falls back to Tesseract if unset.
+google-generativeai==0.8.3
 # Optional heavy OCR (requires ENABLE_EASYOCR=true + ~4GB RAM - NOT for free tier):
 # easyocr==1.7.1
