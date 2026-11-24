@@ -17,6 +17,6 @@ Pillow==10.1.0
 # Gemini Vision - primary prescription OCR (handwritten AR/EN mixed).
 # google-genai SDK required for current AI Studio keys (AQ.* format).
 # Reads GEMINI_API_KEY from the environment; falls back to Tesseract if unset.
-google-genai==3.5.0
+google-genai
 # Optional heavy OCR (requires ENABLE_EASYOCR=true + ~4GB RAM - NOT for free tier):
 # easyocr==1.7.1
