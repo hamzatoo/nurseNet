@@ -338,9 +338,10 @@ def _extract_text_from_image(image_path: str) -> str:
 # list of current candidates until one answers.
 _GEMINI_MODEL_CANDIDATES = [
     os.environ.get("GEMINI_MODEL"),
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
+    "gemini-1.5-flash-002",
     "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-pro-vision",
 ]
 _GEMINI_MODEL_CANDIDATES = [m for m in _GEMINI_MODEL_CANDIDATES if m]
 _genai_configured = False
