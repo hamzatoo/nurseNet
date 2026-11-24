@@ -338,13 +338,12 @@ def _extract_text_from_image(image_path: str) -> str:
 # list of current candidates until one answers.
 _GEMINI_MODEL_CANDIDATES = [
     os.environ.get("GEMINI_MODEL"),
-    "gemini-1.5-flash-002",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
     "gemini-1.5-flash",
     "gemini-1.5-pro",
-    "gemini-pro-vision",
 ]
 _GEMINI_MODEL_CANDIDATES = [m for m in _GEMINI_MODEL_CANDIDATES if m]
-_genai_configured = False
 
 _GEMINI_PROMPT = """You are a medical prescription reader. The image shows a doctor's
 prescription, usually HANDWRITTEN, often mixing English/Latin drug names with
@@ -376,34 +375,31 @@ Rules:
 """
 
 
-def _gemini_genai():
-    """Return the configured google.generativeai module, or None.
+def _gemini_client():
+    """Return (kind, client) for the Gemini API, or (None, None).
 
-    Returns None (silent fallback to Tesseract) when the API key or the
-    google-generativeai package is missing.
+    Prefers the new ``google-genai`` SDK (required for current AI Studio
+    keys such as the ``AQ.*`` format); falls back to the legacy
+    ``google-generativeai`` package when only that is installed.
+    Returns (None, None) - silent Tesseract fallback - when no API key or
+    no SDK is available.
     """
-    global _genai_configured
-    if _genai_configured:
-        try:
-            import google.generativeai as genai
-            return genai
-        except ImportError:
-            return None
-
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
-        return None
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        return None
+        return None, None
 
     try:
-        genai.configure(api_key=api_key)
-        _genai_configured = True
-        return genai
+        from google import genai as new_genai
+        return "genai", new_genai.Client(api_key=api_key)
     except Exception:
-        return None
+        pass
+
+    try:
+        import google.generativeai as legacy
+        legacy.configure(api_key=api_key)
+        return "legacy", legacy
+    except Exception:
+        return None, None
 
 
 def _extract_json_object(text: str):
@@ -487,8 +483,8 @@ def _run_gemini(image_path: str, warnings: list):
     or None on ANY failure so the caller can fall back to Tesseract.
     Never raises - all exceptions are converted into warnings.
     """
-    genai = _gemini_genai()
-    if genai is None:
+    sdk_kind, client = _gemini_client()
+    if client is None:
         if os.environ.get("GEMINI_API_KEY"):
             warnings.append("gemini_unavailable: package or init failed")
         return None
@@ -502,26 +498,29 @@ def _run_gemini(image_path: str, warnings: list):
         return None
 
     text = ""
-    last_error = "unknown"
+    errors = []
     for model_name in _GEMINI_MODEL_CANDIDATES:
         try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content([_GEMINI_PROMPT, img])
+            if sdk_kind == "genai":
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[_GEMINI_PROMPT, img],
+                )
+            else:
+                response = client.GenerativeModel(model_name).generate_content(
+                    [_GEMINI_PROMPT, img])
             text = (response.text or "").strip()
             if text:
                 break
-            last_error = "empty_response"
+            errors.append(f"{model_name}:empty_response")
         except Exception as exc:
             # Covers 404 (retired model), network failures, 429 rate limits,
-            # 5xx, safety blocks, etc. - try the next candidate model.
-            last_error = f"{model_name}:{type(exc).__name__}"
+            # 5xx, auth errors, safety blocks - try the next candidate.
+            errors.append(f"{model_name}:{type(exc).__name__}")
             continue
-    else:
-        warnings.append(f"gemini_request_failed: {last_error}")
-        return None
 
     if not text:
-        warnings.append(f"gemini_request_failed: {last_error}")
+        warnings.append("gemini_request_failed: " + "; ".join(errors))
         return None
 
     payload = _extract_json_object(text)
