@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme.dart';
 import '../services/app_data_service.dart';
+import '../services/notification_service.dart';
 import '../models/user_model.dart';
 import '../models/heart_rate_reading.dart';
 
@@ -28,6 +29,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
   bool _isLoading = true;
   bool _isEditing = false;
   bool _isSaving = false;
+  bool _medicationRemindersEnabled = true;
   
   // Patient data
   String? _medicalCategory;
@@ -90,6 +92,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
   void initState() {
     super.initState();
     _loadPatientData();
+    _loadMedicationReminderPreference();
   }
 
   @override
@@ -259,6 +262,8 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                             _buildMedicalInfoSection(),
                             const SizedBox(height: 24),
                             _buildHeartRateHistory(),
+                            const SizedBox(height: 24),
+                            _buildMedicationReminderToggle(),
                             const SizedBox(height: 24),
                             _buildLogoutButton(),
                             const SizedBox(height: 24),
@@ -579,6 +584,50 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
         color: AppColors.textDark,
       ),
     );
+  }
+
+  Widget _buildMedicationReminderToggle() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: SwitchListTile(
+        title: const Text('تذكيرات مواعيد الأدوية'),
+        subtitle: const Text('إشعارات عند حلول موعد دوائك من الحقيبة الطبية'),
+        value: _medicationRemindersEnabled,
+        onChanged: _toggleMedicationReminders,
+        contentPadding: EdgeInsets.zero,
+      ),
+    );
+  }
+
+  Future<void> _loadMedicationReminderPreference() async {
+    try {
+      final enabled = await NotificationService.instance.getPatientMedicationRemindersEnabled();
+      if (mounted) {
+        setState(() {
+          _medicationRemindersEnabled = enabled;
+        });
+      }
+    } catch (e) {
+      print('Error loading medication reminder preference: $e');
+    }
+  }
+
+  Future<void> _toggleMedicationReminders(bool value) async {
+    try {
+      await NotificationService.instance.setPatientMedicationRemindersEnabled(value);
+      if (mounted) {
+        setState(() {
+          _medicationRemindersEnabled = value;
+        });
+      }
+    } catch (e) {
+      print('Error toggling medication reminders: $e');
+    }
   }
 
   Widget _buildInfoField(

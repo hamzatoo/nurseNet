@@ -34,7 +34,7 @@ class HeartRateService {
   static const Duration _readTimeout = Duration(seconds: 30);
 
   /// Uploads the recorded clip and returns the analysed reading.
-  Future<HeartRateReading> measure(File video) async {
+  Future<HeartRateReading> measure(File video, {String? patientId}) async {
     if (!await video.exists() || await video.length() < 1024) {
       throw const HeartRateException(
         'empty_file',
@@ -43,7 +43,9 @@ class HeartRateService {
       );
     }
 
-    final uri = Uri.parse('${ApiConfig.baseUrl}/api/calculate-heart-rate');
+    final uri = patientId != null
+        ? Uri.parse('${ApiConfig.baseUrl}/api/calculate-heart-rate?patient_id=$patientId')
+        : Uri.parse('${ApiConfig.baseUrl}/api/calculate-heart-rate');
     http.StreamedResponse response;
 
     try {
@@ -135,5 +137,11 @@ class HeartRateService {
         .add(reading.toFirestore());
 
     return reading.copyWith(id: saved.id);
+  }
+
+  /// Measure and save a reading in one call (includes patient_id for alert checking).
+  Future<HeartRateReading> measureAndSave(File video) async {
+    final reading = await measure(video);
+    return await saveReading(reading);
   }
 }

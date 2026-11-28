@@ -98,12 +98,12 @@ service cloud.firestore {
     match /care_requests/{requestId} {
       // السماح بالقراءة للمستخدمين المصادقين
       allow read: if request.auth != null;
-      
+
       // السماح بالكتابة:
       // 1. إنشاء طلب جديد: السماح لأي مستخدم مصادق بإنشاء طلب
       // 2. تحديث: المريض المالك أو الممرض المعني أو المسؤول
       // 3. حذف: المريض المالك أو المسؤول
-      allow create: if request.auth != null && 
+      allow create: if request.auth != null &&
                     request.resource.data.patientId != null &&
                     request.resource.data.patientId == request.auth.uid;
       allow update: if request.auth != null && (
@@ -115,6 +115,15 @@ service cloud.firestore {
         request.auth.uid == resource.data.patientId ||
         isAdmin()
       );
+    }
+
+    // سجل الإشعارات للمراجعة والتحكم في التهدئة (cooldown).
+    // المسؤول يقرأ الكل؛ المستخدم يقرأ إشعاراته فقط.
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null &&
+                   (request.auth.uid == resource.data.recipientId || isAdmin());
+      allow create: if request.auth != null;
+      allow update, delete: if false;
     }
   }
 }

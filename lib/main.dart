@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'screens/splash_view.dart';
 import 'theme.dart';
+import 'services/notification_service.dart';
+import 'services/medication_reminder_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,12 +23,46 @@ void main() async {
       cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
     );
     print('✅ Firestore offline persistence enabled');
+
+    // Initialize notification services
+    await NotificationService.instance.initialize();
+    await MedicationReminderService.instance.initialize();
+    print('✅ Notification services initialized');
   } catch (e) {
     print('❌ Firebase initialization failed: $e');
     print('⚠️ Continuing without Firebase for testing...');
   }
 
+  // Set up notification navigation callbacks
+  _setupNotificationNavigation();
+
   runApp(const NurseNetApp());
+}
+
+void _setupNotificationNavigation() {
+  // Set up FCM notification tap callback
+  NotificationService.instance.setOnNotificationTapCallback(
+    (type, data) {
+      // Navigate based on notification type
+      // This will be enhanced with proper navigation in a router-based setup
+      if (type == 'high_hr_alert') {
+        // Navigate to patient profile/vitals
+        final patientId = data['patientId'];
+        print('Navigate to patient vitals: $patientId');
+      } else if (type == 'medication_reminder') {
+        // Navigate to medication pouch
+        print('Navigate to medication pouch');
+      }
+    },
+  );
+
+  // Set up medication reminder tap callback
+  MedicationReminderService.instance.setOnReminderTapCallback(
+    (medicationId, timeStr) {
+      // Navigate to medication details
+      print('Navigate to medication details: $medicationId at $timeStr');
+    },
+  );
 }
 
 class NurseNetApp extends StatelessWidget {

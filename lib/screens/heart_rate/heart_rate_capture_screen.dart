@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../models/heart_rate_reading.dart';
 import '../../services/heart_rate_service.dart';
@@ -218,7 +219,8 @@ class _HeartRateCaptureScreenState extends State<HeartRateCaptureScreen>
       final clipFile = File(clip.path);
       HeartRateReading reading;
       try {
-        reading = await HeartRateService.instance.measure(clipFile);
+        final patientId = FirebaseAuth.instance.currentUser?.uid;
+        reading = await HeartRateService.instance.measure(clipFile, patientId: patientId);
       } finally {
         // Free storage regardless of success/failure/cancellation.
         try {

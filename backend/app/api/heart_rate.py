@@ -15,6 +15,16 @@ try:  # OpenCV is optional at import time so the rest of the API keeps working.
 except ImportError:  # pragma: no cover - depends on the deployment image
     rppg = None  # type: ignore[assignment]
 
+try:
+    from app.core.notification_service import notification_service
+except ImportError:
+    notification_service = None  # Fallback if notification service not available
+
+try:
+    from app.core.firebase import db as firestore_db
+except ImportError:
+    firestore_db = None
+
 router = APIRouter(prefix="/api", tags=["heart-rate"])
 
 MAX_UPLOAD_BYTES = 80 * 1024 * 1024
@@ -51,11 +61,17 @@ def _content_type_allowed(upload: UploadFile) -> bool:
 
 
 @router.post("/calculate-heart-rate")
-async def calculate_heart_rate(video: UploadFile = File(...)):
+async def calculate_heart_rate(
+    video: UploadFile = File(...),
+    patient_id: Optional[str] = None,
+):
     """Estimate the heart rate (BPM) from a 6-10 second face video.
 
     The clip is written to a temporary file, analysed with the rPPG pipeline in a
     worker thread, and always deleted afterwards.
+
+    If patient_id is provided and BPM exceeds the high-risk threshold,
+    a notification is sent to the assigned nurse.
     """
     if rppg is None:
         return _error(
@@ -98,6 +114,49 @@ async def calculate_heart_rate(video: UploadFile = File(...)):
             )
 
         measurement = await run_in_threadpool(rppg.analyse_video_file, temporary_path)
+
+        # High HR alert: notify assigned nurse if threshold exceeded
+        if (
+            patient_id
+            and notification_service
+            and measurement.bpm >= notification_service.HIGH_HR_THRESHOLD
+        ):
+            try:
+                # Fetch patient name and assigned nurse from Firestore
+                if firestore_db:
+                    patient_doc = firestore_db.collection("users").document(patient_id).get()
+                    if patient_doc.exists:
+                        patient_data = patient_doc.to_dict()
+                        patient_name = patient_data.get("name", "مريض")
+
+                        # Find assigned nurse (check active care requests)
+                        requests_ref = (
+                            firestore_db.collection("requests")
+                            .where("patientId", "==", patient_id)
+                            .where("status", "in", ["accepted", "inProgress", "matched"])
+                            .limit(1)
+                        )
+                        assigned_request = list(requests_ref.stream())
+                        if assigned_request:
+                            req_data = assigned_request[0].to_dict()
+                            nurse_id = req_data.get("nurseId")
+                            if nurse_id:
+                                # Check nurse alert preference
+                                nurse_doc = firestore_db.collection("users").document(nurse_id).get()
+                                if nurse_doc.exists:
+                                    nurse_data = nurse_doc.to_dict()
+                                    nurse_alerts_enabled = nurse_data.get("highHrAlertsEnabled", True)
+                                    notification_service.send_high_hr_alert(
+                                        patient_id=patient_id,
+                                        patient_name=patient_name,
+                                        bpm=measurement.bpm,
+                                        nurse_id=nurse_id,
+                                        nurse_fcm_enabled=nurse_alerts_enabled,
+                                    )
+            except Exception as e:
+                # Don't fail the heart rate measurement if notification fails
+                print(f"⚠️ Failed to send high-HR alert: {e}")
+
         return {
             "status": "success",
             "bpm": measurement.bpm,

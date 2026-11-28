@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../theme.dart';
 import '../models/user_model.dart';
 import '../services/reviews_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/rating_dialog.dart';
 import 'booking_request_screen.dart';
 
@@ -28,6 +29,7 @@ class _NurseProfileScreenState extends State<NurseProfileScreen> {
   bool _hasReviewed = false;
   DateTime? _selectedDate;
   bool _hasPendingRequest = false;
+  bool _highHrAlertsEnabled = true;
 
   @override
   void initState() {
@@ -38,6 +40,7 @@ class _NurseProfileScreenState extends State<NurseProfileScreen> {
         _loadNurseData();
         _checkIfReviewed();
         _checkPendingRequest();
+        _loadHighHrAlertPreference();
       }
     });
   }
@@ -137,12 +140,44 @@ class _NurseProfileScreenState extends State<NurseProfileScreen> {
             .where('status', isEqualTo: 'pending')
             .limit(1)
             .get();
-        
+
         if (mounted) {
           setState(() => _hasPendingRequest = snapshot.docs.isNotEmpty);
         }
       } catch (e) {
         debugPrint('Error checking pending request: $e');
+      }
+    }
+  }
+
+  Future<void> _loadHighHrAlertPreference() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      try {
+        final enabled = await NotificationService.instance.getNurseHighHrAlertsEnabled();
+        if (mounted) {
+          setState(() {
+            _highHrAlertsEnabled = enabled;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error loading high HR alert preference: $e');
+      }
+    }
+  }
+
+  Future<void> _toggleHighHrAlerts(bool value) async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      try {
+        await NotificationService.instance.setNurseHighHrAlertsEnabled(value);
+        if (mounted) {
+          setState(() {
+            _highHrAlertsEnabled = value;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error toggling high HR alerts: $e');
       }
     }
   }
@@ -545,8 +580,18 @@ class _NurseProfileScreenState extends State<NurseProfileScreen> {
           const SizedBox(height: 12),
           _buildInfoRow('رقم الهاتف', _nurse!.phone ?? '', allowWrap: true),
           const SizedBox(height: 12),
-          _buildInfoRow('حالة التوثيق', 
+          _buildInfoRow('حالة التوثيق',
             _nurse!.certificateVerified == true ? 'موثق' : 'غير موثق'),
+          const SizedBox(height: 12),
+          // High HR alert toggle (only for the nurse viewing their own profile)
+          if (_auth.currentUser?.uid == widget.nurseId)
+            SwitchListTile(
+              title: const Text('تنبيهات نبض مرتفع'),
+              subtitle: const Text('إشعارات عندما يتجاوز نبض المريض العتبة'),
+              value: _highHrAlertsEnabled,
+              onChanged: _toggleHighHrAlerts,
+              contentPadding: EdgeInsets.zero,
+            ),
         ],
       ),
     );
